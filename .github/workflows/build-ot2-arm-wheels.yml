@@ -16,8 +16,15 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build ARM wheel image
-        run: |
-          docker build --platform linux/arm/v7 -f Dockerfile.build -t ot2-wheel-builder .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.build
+          platforms: linux/arm/v7
+          load: true
+          tags: ot2-wheel-builder
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Extract wheels
         run: |
