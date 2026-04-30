@@ -193,6 +193,14 @@ Always add a simulation mode, even if it just returns mocked data. The simulatio
 Add unit tests for every endpoint in the transport protocol implementation (simulated)
 Add unit tests for every SiLA endpoint
 
+OT-2 Deployment and ARM Wheel Builds
+The OT-2 runs glibc 2.25. When a C-extension wheel fails with "GLIBC_X.XX not found", before reaching for a source compile:
+
+1. Check if a newer package version ships a manylinux_2_17_armv7l wheel (glibc 2.17+) — this is often the fix (e.g. rpds-py 0.7 → 0.30).
+2. Check if the required dependency (e.g. OpenSSL 1.1.1) is available in a distro backports repo (e.g. debian stretch-backports) before building from source.
+3. Only compile from source as a last resort when no pre-built binary exists for glibc <= 2.25.
+For grpcio specifically: no pre-built manylinux armv7l wheel exists on PyPI. It must be compiled from source on Debian Stretch (glibc 2.24) using Python 3.10 (also compiled from source, since Stretch predates Python 3.10 packages) with OpenSSL 1.1.1 from stretch-backports.
+
 Maintainability and Versioning
 Use semantic versioning
 Document the models of the instrument the sila server was tested with
