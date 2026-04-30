@@ -1,6 +1,8 @@
-# Stage 1: Compile Python 3.10 + grpcio on Debian Stretch (glibc 2.24).
-# OT-2 has glibc 2.25. Buster has glibc 2.28 — too new, symbols don't exist on OT-2.
+# Stage 1: Compile grpcio on Debian Stretch (glibc 2.24).
+# OT-2 has glibc 2.25. Buster has glibc 2.28 — too new.
 # Stretch (glibc 2.24) is the oldest ARM image with a working apt archive.
+# Python 3.10 requires OpenSSL 1.1.1, but Stretch ships 1.1.0 — compile both from source.
+# Each RUN is a separate cache layer: apt → OpenSSL → Python → grpcio.
 FROM arm32v7/debian:stretch-slim AS grpc-builder
 
 # Stretch is EOL — redirect to archive; Release file is expired so disable valid-until check
@@ -11,18 +13,29 @@ RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-
     apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
-        libssl-dev \
         zlib1g-dev \
         libffi-dev \
         wget \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 3.10.4 is the last release compatible with OpenSSL 1.1.0 (Stretch ships 1.1.0l)
+# OpenSSL 1.1.1 (Stretch ships 1.1.0 which is too old for Python 3.10.4+)
+RUN wget -q https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
+    tar xzf openssl-1.1.1w.tar.gz && \
+    cd openssl-1.1.1w && \
+    ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl shared zlib && \
+    make -j$(nproc) && \
+    make install_sw && \
+    echo /usr/local/ssl/lib > /etc/ld.so.conf.d/openssl.conf && ldconfig && \
+    cd .. && rm -rf openssl-1.1.1w*
+
+# Python 3.10 built against the custom OpenSSL 1.1.1
 RUN wget -q https://www.python.org/ftp/python/3.10.4/Python-3.10.4.tgz && \
     tar xzf Python-3.10.4.tgz && \
     cd Python-3.10.4 && \
-    ./configure --enable-shared --prefix=/usr/local && \
+    ./configure --enable-shared --prefix=/usr/local \
+        --with-openssl=/usr/local/ssl \
+        --with-openssl-rpath=auto && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
