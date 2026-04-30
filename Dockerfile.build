@@ -41,7 +41,8 @@ RUN wget -q https://www.python.org/ftp/python/3.10.4/Python-3.10.4.tgz && \
     ldconfig && \
     cd .. && rm -rf Python-3.10.4*
 
-RUN /usr/local/bin/pip3 install --upgrade pip wheel setuptools
+# setuptools 80+ removed pkg_resources from the wheel; pin to a version that still includes it.
+RUN /usr/local/bin/pip3 install --upgrade pip wheel "setuptools<80"
 # grpcio 1.46.x bundles abseil-cpp ~20211102 which requires only GCC 5+.
 # grpcio 1.70+ bundles a newer abseil that requires GCC 7+, unavailable on Stretch.
 # Use setup.py bdist_wheel directly (not pip) to avoid pip's subprocess isolation
