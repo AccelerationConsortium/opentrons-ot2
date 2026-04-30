@@ -47,7 +47,7 @@ RUN /usr/local/bin/pip3 install --upgrade pip wheel setuptools
 # _PYTHON_HOST_PLATFORM: uname -m returns aarch64 inside arm32v7 on ARM64 host;
 # override so the wheel is tagged linux_armv7l (the actual binary is arm32 from armhf gcc).
 RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
-    /usr/local/bin/pip3 wheel --no-binary grpcio "grpcio==1.46.3" -w /grpc-output/
+    /usr/local/bin/pip3 wheel --no-build-isolation --no-binary grpcio "grpcio==1.46.3" -w /grpc-output/
 
 
 # Stage 2: Build our package and download remaining deps
