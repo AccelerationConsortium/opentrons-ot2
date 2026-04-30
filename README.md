@@ -122,6 +122,57 @@ connector start --app unitelabs.opentrons_ot2:create_app -cfg <path to config> -
 
 In this way one can have multiple configurations for the same connector.
 
+## Deploying to the OT-2
+
+The OT-2 runs a custom embedded Linux with glibc 2.25 and Python 3.10. Standard PyPI
+wheels for C-extension packages are built against much newer glibc versions and will
+fail at import with `GLIBC_X.XX not found`. The two affected packages are:
+
+| Package | PyPI wheel requires | Fix |
+|---------|-------------------|-----|
+| `grpcio` | glibc 2.32+ | Compiled from source on Debian Buster (glibc 2.28 cap) |
+| `rpds-py <0.30` | glibc 2.34+ | Upgrade to ≥0.30, which ships a `manylinux_2_17_armv7l` wheel (glibc 2.17+) |
+
+The `dist_arm/` directory contains a pre-built bundle of all wheels ready for offline
+installation on the robot.
+
+### Building `dist_arm/`
+
+Trigger the **Build OT-2 ARM Wheels** GitHub Actions workflow (`.github/workflows/build-ot2-arm-wheels.yml`).
+It runs on a native `ubuntu-24.04-arm` runner, so arm32v7 containers execute without
+QEMU emulation. The multi-stage `Dockerfile.build` compiles grpcio from source on
+Debian Buster to keep glibc symbol requirements within what the OT-2 supports, then
+downloads all remaining dependencies as standard wheels.
+
+Download the `ot2-arm-wheels` artifact from the completed run and replace `dist_arm/`.
+
+### Installing on the OT-2
+
+SSH into the robot and copy the `dist_arm/` directory across:
+
+```sh
+scp -r dist_arm/ root@<ot2-ip>:/root/
+```
+
+Then on the robot:
+
+```sh
+bash /root/dist_arm/install.sh
+```
+
+This creates a venv at `/opt/sila2_ot2` with `--system-site-packages` so the connector
+can access the system `opentrons` package. Start the connector with:
+
+```sh
+/opt/sila2_ot2/bin/python -m unitelabs.opentrons_ot2
+```
+
+### Why `--system-site-packages`
+
+The `opentrons` package (and its `opentrons-shared-data` companion) are pre-installed
+as system packages by Opentrons firmware. They are intentionally excluded from
+`dist_arm/` to avoid version conflicts. The venv inherits them via `--system-site-packages`.
+
 ## Usage
 
 To interact with the running connector, we recommend using the [SiLA Browser](https://gitlab.com/unitelabs/sila2/sila-browser).
