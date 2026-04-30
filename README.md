@@ -130,7 +130,7 @@ fail at import with `GLIBC_X.XX not found`. The two affected packages are:
 
 | Package | PyPI wheel requires | Fix |
 |---------|-------------------|-----|
-| `grpcio` | glibc 2.32+ | Compiled from source on Debian Buster (glibc 2.28 cap) |
+| `grpcio` | glibc 2.32+ | Compiled from source on Debian Stretch (glibc 2.24 cap) |
 | `rpds-py <0.30` | glibc 2.34+ | Upgrade to ≥0.30, which ships a `manylinux_2_17_armv7l` wheel (glibc 2.17+) |
 
 The `dist_arm/` directory contains a pre-built bundle of all wheels ready for offline

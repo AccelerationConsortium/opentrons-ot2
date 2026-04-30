@@ -1,17 +1,37 @@
-# Stage 1: Compile grpcio from source on Debian Buster (glibc 2.28, Python 3.10 included)
-# PyPI armv7l grpcio wheels require glibc 2.32+ (built on modern systems).
-# Compiling from source on Buster caps the glibc requirement at 2.28, and since
-# grpcio's actual symbol usage is much older, the binary runs on OT-2's glibc 2.25.
-FROM arm32v7/python:3.10-slim-buster AS grpc-builder
+# Stage 1: Compile Python 3.10 + grpcio on Debian Stretch (glibc 2.24).
+# OT-2 has glibc 2.25. Buster has glibc 2.28 — too new, symbols don't exist on OT-2.
+# Stretch (glibc 2.24) is the oldest ARM image with a working apt archive.
+FROM arm32v7/debian:stretch-slim AS grpc-builder
 
+# Stretch is EOL — redirect to archive, drop stretch-updates and security (gone from archive)
 RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
-    sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list && \
-    sed -i '/buster-updates/d' /etc/apt/sources.list && \
+    sed -i '/stretch-updates/d' /etc/apt/sources.list && \
+    sed -i '/security/d' /etc/apt/sources.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends build-essential && \
-    rm -rf /var/lib/apt/lists/*
-RUN pip install --upgrade pip wheel
-RUN pip wheel --no-binary grpcio "grpcio==1.70.0" -w /grpc-output/
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        libssl-dev \
+        zlib1g-dev \
+        libbz2-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        libffi-dev \
+        wget \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 3.10.4 is the last release compatible with OpenSSL 1.1.0 (Stretch ships 1.1.0l)
+RUN wget -q https://www.python.org/ftp/python/3.10.4/Python-3.10.4.tgz && \
+    tar xzf Python-3.10.4.tgz && \
+    cd Python-3.10.4 && \
+    ./configure --enable-shared --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd .. && rm -rf Python-3.10.4*
+
+RUN /usr/local/bin/pip3 install --upgrade pip wheel
+RUN /usr/local/bin/pip3 wheel --no-binary grpcio "grpcio==1.70.0" -w /grpc-output/
 
 
 # Stage 2: Build our package and download remaining deps
@@ -24,7 +44,6 @@ COPY pyproject.toml README.md ./
 COPY src/ src/
 COPY config/ config/
 
-# Build our wheel, download all deps, then swap in the glibc-compatible grpcio
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
