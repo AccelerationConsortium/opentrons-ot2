@@ -6,21 +6,17 @@
 FROM arm32v7/debian:stretch-slim AS grpc-builder
 
 # Stretch is EOL — redirect to archive; Release file is expired so disable valid-until check.
-# stretch-backports provides gcc-7/g++-7; grpcio 1.70.0 bundles abseil which requires GCC 7+.
 RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-valid-until && \
     sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list && \
     sed -i '/stretch-updates/d' /etc/apt/sources.list && \
-    echo 'deb http://archive.debian.org/debian stretch-backports main' >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
         zlib1g-dev \
         libffi-dev \
         wget \
-        ca-certificates && \
-    apt-get install -y -t stretch-backports --no-install-recommends \
-        gcc-7 g++-7 \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # OpenSSL 1.1.1 from source — stretch-backports doesn't reliably override configure detection
@@ -46,11 +42,12 @@ RUN wget -q https://www.python.org/ftp/python/3.10.4/Python-3.10.4.tgz && \
     cd .. && rm -rf Python-3.10.4*
 
 RUN /usr/local/bin/pip3 install --upgrade pip wheel
-# CC/CXX=gcc-7: abseil (bundled in grpcio) requires GCC 7+; Stretch ships GCC 6.3.
+# grpcio 1.46.x bundles abseil-cpp ~20211102 which requires only GCC 5+.
+# grpcio 1.70+ bundles a newer abseil that requires GCC 7+, unavailable on Stretch.
 # _PYTHON_HOST_PLATFORM: uname -m returns aarch64 inside arm32v7 on ARM64 host;
 # override so the wheel is tagged linux_armv7l (the actual binary is arm32 from armhf gcc).
-RUN CC=gcc-7 CXX=g++-7 _PYTHON_HOST_PLATFORM=linux-armv7l \
-    /usr/local/bin/pip3 wheel --no-binary grpcio "grpcio==1.70.0" -w /grpc-output/
+RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
+    /usr/local/bin/pip3 wheel --no-binary grpcio "grpcio==1.46.3" -w /grpc-output/
 
 
 # Stage 2: Build our package and download remaining deps
