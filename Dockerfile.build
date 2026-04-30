@@ -47,12 +47,13 @@ RUN /usr/local/bin/pip3 install --upgrade pip wheel setuptools
 # Use setup.py bdist_wheel directly (not pip) to avoid pip's subprocess isolation
 # which hides pkg_resources even when setuptools is installed.
 # _PYTHON_HOST_PLATFORM: force linux_armv7l tag — uname -m returns aarch64 in arm32v7 on ARM64.
-RUN /usr/local/bin/pip3 download --no-binary grpcio --no-deps "grpcio==1.46.3" -d /tmp/grpc-dl/ && \
-    tar xzf /tmp/grpc-dl/grpcio-1.46.3.tar.gz -C /tmp/ && \
+RUN wget -q -O /tmp/grpcio-1.46.3.tar.gz \
+        https://files.pythonhosted.org/packages/61/dd/d8eda79197a1275e06621850775c7bbf34a141ff92553754dde4e87d7551/grpcio-1.46.3.tar.gz && \
+    tar xzf /tmp/grpcio-1.46.3.tar.gz -C /tmp/ && \
     cd /tmp/grpcio-1.46.3 && \
     _PYTHON_HOST_PLATFORM=linux-armv7l \
     /usr/local/bin/python3 setup.py bdist_wheel --dist-dir /grpc-output/ && \
-    rm -rf /tmp/grpcio-1.46.3 /tmp/grpc-dl
+    rm -rf /tmp/grpcio-1.46.3 /tmp/grpcio-1.46.3.tar.gz
 
 
 # Stage 2: Build our package and download remaining deps
