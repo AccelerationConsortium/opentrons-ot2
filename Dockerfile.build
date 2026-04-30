@@ -41,7 +41,7 @@ RUN wget -q https://www.python.org/ftp/python/3.10.4/Python-3.10.4.tgz && \
     ldconfig && \
     cd .. && rm -rf Python-3.10.4*
 
-RUN /usr/local/bin/pip3 install --upgrade pip wheel
+RUN /usr/local/bin/pip3 install --upgrade pip wheel setuptools
 # grpcio 1.46.x bundles abseil-cpp ~20211102 which requires only GCC 5+.
 # grpcio 1.70+ bundles a newer abseil that requires GCC 7+, unavailable on Stretch.
 # _PYTHON_HOST_PLATFORM: uname -m returns aarch64 inside arm32v7 on ARM64 host;
