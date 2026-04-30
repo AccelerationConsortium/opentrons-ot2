@@ -1,0 +1,192 @@
+[project]
+name = "unitelabs-opentrons-ot2"
+version = "0.1.0"
+description = "A SiLA2 connector for the Opentrons OT-2 liquid handling robot"
+readme = "README.md"
+authors = [{name = "Acceleration Consortium", email = "developers@accelerationconsortium.ca"},]
+maintainers = [
+   {name = "Acceleration Consortium", email ="developers@accelerationconsortium.ca"},
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+    "Topic :: System :: Hardware",
+]
+requires-python=">=3.10,<4.0"
+dependencies=[
+    "unitelabs-cdk~=0.9.0",
+    "opentrons>=8.0.0",
+]
+
+[project.urls]
+repository = "https://github.com/AccelerationConsortium/sila2-ot2"
+documentation = "https://github.com/AccelerationConsortium/sila2-ot2/-/README.md"
+"Bug Tracker" = "https://github.com/AccelerationConsortium/sila2-ot2/-/issues"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+]
+dev = [
+    "unitelabs-cdk[dev]",
+    "ruff",
+    "pre-commit",
+    "commitizen",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--color=yes"
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes (ruff default)
+    "E",      # pycodestyle: error (ruff default: E4, E7, E9)
+    "A",      # flake8-builtins
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "ARG",    # flake8-unused-arguments
+    "ASYNC",  # flake8-async
+    "D",      # pydocstyle
+    "D213",   # gDoc-style tweak: multi-line-summary-second-line
+    "D401",   # gDoc-style tweak: non-imperative-mood
+    "DOC",    # pydoclint (preview-only)
+    "ANN001", # flake8-annotations: missing-type-function-argument
+    "ANN201", # flake8-annotations: missing-return-type-undocumented-public-function
+    "ANN202", # flake8-annotations: missing-return-type-private-function
+    "ANN401", # flake8-annotations: any-type
+    "EM",     # flake8-errmsg
+    "BLE",    # flake8-blind-except
+    "PIE",    # flake8-pie
+    "SIM",    # flake8-simplify
+    "PERF",   # perflint: performance
+    "RET",    # flake8-return
+    "RSE",    # flake8-raise
+    "RUF",    # ruff-specific-rules
+    "ISC",    # flake8-implicit-str-concat
+    "RET",    # flake8-return
+    "PTH",    # flake8-use-pathlib
+    "PLW",    # pylint warning
+    "UP",     # py-upgrade
+    "ERA",    # no commented-out code
+    "FIX",    # no FIXME comments
+    "T201",   # no print calls for debugging
+    "S101",   # no assert
+]
+ignore = [
+    "D100",    # undocumented-public-module
+    "D104",    # undocumented-public-package
+    "D105",    # undocumented-magic-method
+    "D107",    # undocumented-public-init
+    "D202",    # blank-line-after-function
+    "D212",    # multi-line-summary-first-line
+    "D418",    # overload-with-docstring
+    "PERF203", # try-except-in-loop
+]
+
+[tool.ruff.lint.per-file-ignores]
+# ignore documentation, typing, strict rules in scripts outside src/
+"!src/**.py" = ["D", "ANN", "ARG", "S101", "EM", "BLE", "PTH", "T201", "FIX", "ERA", "E7", "S", "B"]
+# ignore parameter name warnings in feature files
+"src/unitelabs/opentrons_ot2/features/**/**.py" =  ["D417", "EM"]
+# legacy driver wrapper — not subject to strict style enforcement
+"src/unitelabs/opentrons_ot2/io/_legacy_direct.py" = ["D", "EM", "PTH", "PLW", "SIM", "ARG"]
+# test scripts outside the tests/ suite
+"test_*.py" = ["E402"]
+
+[tool.ruff.lint.flake8-annotations]
+mypy-init-return = false
+
+[tool.ruff.lint.flake8-comprehensions]
+allow-dict-calls-with-keyword-arguments = true
+
+[tool.ruff.lint.flake8-unused-arguments]
+ignore-variadic-names = true
+
+[tool.ruff.lint.pycodestyle]
+ignore-overlong-task-comments = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+ignore-var-parameters = true
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+docstring-code-line-length = 80
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_scheme = "semver2"
+version_provider = "uv"
+major_version_zero = true
+bump_message = "chore: bump version $current_version → $new_version"
+pre_bump_hooks = [
+    "echo '[PRE] CZ PreBumpHook...'",
+    "if [ \"$(git rev-parse --abbrev-ref HEAD)\" = \"main\" ]; then uv run --no-sync clog unitelabs.opentrons_ot2 -o ./CHANGELOG.md -r; else uv run --no-sync clog unitelabs.opentrons_ot2 -o ./CHANGELOG.md; fi",
+]
+post_bump_hooks = [
+    "echo '[POST] CZ PostBumpHook...'",
+    "git push origin main --tags --follow-tags --no-verify -o ci.skip",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    "@typing.overload",
+    "if typing.TYPE_CHECKING:",
+    "\\.\\.\\.",
+]
+
+[tool.cruft]
+skip = [
+    ".venv/",
+    ".git/",
+    ".ruff_cache/",
+    ".pytest_cache/",
+    ".env",
+    ".uv-cache/",
+    "uv.lock",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/unitelabs"]
+
+[tool.uv]
+default-groups = "all"
+prerelease = "if-necessary-or-explicit"
+override-dependencies = [
+    "jsonschema>=4.25",
+]
+
+[[tool.uv.index]]
+name = "unitelabs"
+url = "https://gitlab.com/api/v4/groups/1009252/-/packages/pypi/simple"
+authenticate = "auto"
+explicit = true
+
+[tool.uv.sources]
+opentrons = { path = "../../opentrons/api", editable = true }
+opentrons-shared-data = { path = "../../opentrons/shared-data/python", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

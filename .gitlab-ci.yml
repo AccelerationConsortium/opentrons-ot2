@@ -1,0 +1,245 @@
+stages:
+  - build
+  - test
+  - rc-release
+  - release
+  - deploy
+
+variables:
+  BASE_LAYER: trixie-slim
+  UV_VERSION: 0.9.6
+  UV_CACHE_DIR: .uv-cache
+  UV_FROZEN: true
+  UV_PUBLISH_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
+  UV_PUBLISH_USERNAME: gitlab-ci-token
+  UV_PUBLISH_PASSWORD: "${CI_JOB_TOKEN}"
+  UV_INDEX_UNITELABS_USERNAME: gitlab-ci-token
+  UV_INDEX_UNITELABS_PASSWORD: "$CI_JOB_TOKEN"
+  PYTHON_VERSION: 3.13
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  VENV_DIR: ".venv"
+  GITLAB_TOKEN: ${UNITELABS_CI_RELEASER_TOKEN}
+  DEFAULT_UV_IMAGE: "ghcr.io/astral-sh/uv:${UV_VERSION}-python${PYTHON_VERSION}-${BASE_LAYER}"
+  UV_LINK_MODE: copy
+
+cache:
+  paths:
+    - .cache/pip
+    - .venv/
+    - .uv-cache
+
+.standard_rules:
+  image: ${DEFAULT_UV_IMAGE}
+  cache:
+    - key:
+        files:
+          - uv.lock
+      paths:
+        - $UV_CACHE_DIR
+  before_script:
+    - uv sync --all-extras
+  after_script:
+    - uv cache prune --ci
+
+
+.matrix_rules:
+  extends:
+    - .standard_rules
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.14"]
+  image: "ghcr.io/astral-sh/uv:${UV_VERSION}-python${PYTHON_VERSION}-${BASE_LAYER}"
+
+.validate_package_name: &validate_package_name |
+  echo "Validating PACKAGE_NAME=${PACKAGE_NAME}"
+  if [ -z "$PACKAGE_NAME" ]; then
+    echo "PACKAGE_NAME must be set"
+    exit 1
+  fi
+  if [[ ! "$PACKAGE_NAME" =~ ^unitelabs\-.+ ]]; then
+    echo "PACKAGE_NAME must start with 'unitelabs-'"
+    exit 1
+  fi
+
+.validate_package_version: &validate_package_version |
+  echo "Validating PACKAGE_VERSION=${PACKAGE_VERSION}"
+  if [[ ! "$PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.([0-9]+)(\+([a-z0-9]{8})+)?)?$ ]]; then
+    echo "PACKAGE_VERSION must be a valid semantic version (e.g., 1.0.0, 1.0.0-alpha|beta|rc.1{+xxxxyyyy}, etc. )"
+    exit 1
+  fi
+
+.check_package_version_has_not_changed: &check_package_version_has_not_changed |
+  echo "Checking that package version has not changed in pyproject.toml"
+  git fetch origin main
+  if git diff origin/main -- pyproject.toml | grep -E "^[+-]version = "; then
+    echo "✗ Version was modified! Please revert the version change in pyproject.toml"
+    exit 1
+  else
+    echo "✓ Version has not been modified in pyproject.toml"
+  fi
+
+# Shared Jobs
+compile:
+  stage: build
+  extends:
+    - .standard_rules
+  script:
+    - apt-get update -qq && apt-get install -y -qq git && echo "Installed git"
+    - export OLD_PACKAGE_VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+    - echo "Discovered old package version:${OLD_PACKAGE_VERSION}"
+    - *check_package_version_has_not_changed
+    - export PACKAGE_NAME=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["name"])')
+    - echo "Discovered package name:${PACKAGE_NAME}"
+    - echo "PACKAGE_NAME=${PACKAGE_NAME}" >> variables.env
+    - export PACKAGE_IMPORT_NAME=${PACKAGE_NAME//-/_}
+    - export PACKAGE_IMPORT_NAME=${PACKAGE_IMPORT_NAME/_/.}
+    - echo "Derived package import name:${PACKAGE_IMPORT_NAME}"
+    - echo "PACKAGE_IMPORT_NAME=${PACKAGE_IMPORT_NAME}" >> variables.env
+    - uv build --no-cache
+  artifacts:
+    reports:
+      dotenv: variables.env
+    expire_in: 1 hour
+    paths:
+      - "dist/"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "pipeline"
+
+format:
+  stage: test
+  extends:
+    - .standard_rules
+  needs:
+    - job: compile
+      artifacts: true
+  script:
+    - uv run ruff format --check src
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "pipeline"
+
+lint:
+  stage: test
+  extends:
+    - .standard_rules
+  needs:
+    - job: compile
+      artifacts: true
+  script:
+    - uv run ruff check src --output-format=gitlab | tee code-quality-report.json
+  artifacts:
+    reports:
+      codequality: $CI_PROJECT_DIR/code-quality-report.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "pipeline"
+
+test:
+  stage: test
+  extends:
+    - .matrix_rules
+  needs:
+    - job: compile
+      artifacts: true
+  script:
+    - uv run pytest --cov=src --cov-report=term --cov-report=xml --junit-xml=junit.xml
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+      junit:
+        - junit.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "pipeline"
+# END of Shared Jobs
+
+# Development
+dev:package:
+  stage: rc-release
+  extends:
+    - .standard_rules
+  needs:
+    - job: compile
+      artifacts: true
+    - job: test
+  script:
+    - apt-get update -qq && apt-get install -y -qq git && echo "Installed git for cz"
+    - export NEW_VERSION=$(uv run cz bump --prerelease rc --dry-run --get-next --yes)+$CI_COMMIT_SHORT_SHA
+    - export PACKAGE_VERSION=${NEW_VERSION}
+    - *validate_package_version
+    - echo "New version to be set:${PACKAGE_VERSION}"
+    - echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> variables.env
+    - |
+      sed -i "s/^version = .*/version = \"${PACKAGE_VERSION}\"/" pyproject.toml
+    - rm -rf dist && uv build --no-cache
+    - uv publish
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
+      allow_failure: true
+  artifacts:
+    reports:
+      dotenv: variables.env
+    expire_in: 1 hour
+
+# END of Development
+
+# Production and Release
+prod:package:
+  stage: release
+  variables:
+    UV_PUBLISH_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
+    UV_PUBLISH_USERNAME: gitlab-ci-token
+    UV_PUBLISH_PASSWORD: "${CI_JOB_TOKEN}"
+  script:
+    - uv build
+    - uv publish
+  rules:
+    - if: $CI_COMMIT_TAG
+
+prod:release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script:
+    - echo "release job"
+  release:
+    tag_name: "$CI_COMMIT_TAG"
+    description: "$CI_COMMIT_TAG"
+  rules:
+    - if: $CI_PROJECT_ROOT_NAMESPACE == 'unitelabs' && $CI_COMMIT_TAG
+# END of Production and Release
+
+# OT-2 ARM Wheel Build
+# Runs on a native ARM64 runner — arm32v7 executes natively on ARM64 (no QEMU),
+# so grpcio compiles in minutes rather than hours.
+build:ot2-arm-wheels:
+  stage: deploy
+  tags:
+    - saas-linux-medium-arm64
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: "/certs"
+  script:
+    - docker build --platform linux/arm/v7 -f Dockerfile.build -t ot2-wheel-builder .
+    - id=$(docker create ot2-wheel-builder)
+    - docker cp $id:/output dist_arm
+    - docker rm $id
+    - ls -la dist_arm/
+  artifacts:
+    name: ot2-arm-wheels
+    paths:
+      - dist_arm/
+    expire_in: 4 weeks
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_COMMIT_TAG
+      when: manual
+# END of OT-2 ARM Wheel Build

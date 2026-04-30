@@ -1,0 +1,34 @@
+# Stage 1: Compile grpcio from source on Debian Buster (glibc 2.28, Python 3.10 included)
+# PyPI armv7l grpcio wheels require glibc 2.32+ (built on modern systems).
+# Compiling from source on Buster caps the glibc requirement at 2.28, and since
+# grpcio's actual symbol usage is much older, the binary runs on OT-2's glibc 2.25.
+FROM arm32v7/python:3.10-slim-buster AS grpc-builder
+
+RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
+    sed -i 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list && \
+    sed -i '/buster-updates/d' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends build-essential && \
+    rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip wheel
+RUN pip wheel --no-binary grpcio "grpcio==1.70.0" -w /grpc-output/
+
+
+# Stage 2: Build our package and download remaining deps
+FROM arm32v7/python:3.10-slim-bookworm AS builder
+
+WORKDIR /build
+RUN pip install --upgrade pip wheel build
+
+COPY pyproject.toml README.md ./
+COPY src/ src/
+COPY config/ config/
+
+# Build our wheel, download all deps, then swap in the glibc-compatible grpcio
+RUN python -m build --wheel && \
+    mkdir -p /output && \
+    cp dist/*.whl /output/ && \
+    pip download -d /output/ "unitelabs-cdk~=0.9.0" && \
+    rm -f /output/grpcio-*.whl
+
+COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/

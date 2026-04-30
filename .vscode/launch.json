@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Connector start",
+      "type": "debugpy",
+      "request": "launch",
+      "purpose": ["debug-test"],
+      "program": "${workspaceFolder}/.venv/bin/connector",
+      "console": "integratedTerminal",
+      "args": ["start", "-vvv"]
+    },
+    {
+      "name": "Python: Debug Tests",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "purpose": ["debug-test"],
+      "console": "internalConsole",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "justMyCode": false,
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "esbenp.prettier-vscode",
+    "editorconfig.editorconfig",
+    "charliermarsh.ruff",
+    "tamasfe.even-better-toml"
+  ]
+}

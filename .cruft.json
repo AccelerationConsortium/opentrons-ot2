@@ -1,0 +1,31 @@
+{
+  "template": "https://gitlab.com/unitelabs/cdk/connector-factory.git",
+  "commit": "69585dd163662d9263d1ce0ebcc6cda3524be6c1",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "connector_name": "Opentrons OT-2",
+      "project_name": "opentrons-ot2",
+      "package_name": "opentrons_ot2",
+      "__package_import_name": "unitelabs.opentrons_ot2",
+      "__protocol_name": "OpentronsOt2",
+      "project_description": "A SiLA2 connector for the Opentrons OT-2 liquid handling robot",
+      "author_full_name": "Acceleration Consortium",
+      "author_email": "developers@accelerationconsortium.ca",
+      "project_repo": "https://github.com/AccelerationConsortium/sila2-ot2",
+      "communication_type": "tcp",
+      "env": "uv",
+      "_render_devdocs": false,
+      "_jinja2_env_vars": {
+        "lstrip_blocks": true,
+        "trim_blocks": true
+      },
+      "_extensions": [
+        "internal_ext.IsInternalExtension"
+      ],
+      "_template": "https://gitlab.com/unitelabs/cdk/connector-factory.git",
+      "_commit": "69585dd163662d9263d1ce0ebcc6cda3524be6c1"
+    }
+  },
+  "directory": null
+}

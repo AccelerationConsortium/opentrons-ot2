@@ -1,0 +1,34 @@
+name: Build OT-2 ARM Wheels
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['*']
+
+jobs:
+  build-ot2-arm-wheels:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ARM wheel image
+        run: |
+          docker build --platform linux/arm/v7 -f Dockerfile.build -t ot2-wheel-builder .
+
+      - name: Extract wheels
+        run: |
+          id=$(docker create ot2-wheel-builder)
+          docker cp $id:/output dist_arm
+          docker rm $id
+          ls -la dist_arm/
+
+      - name: Upload wheels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ot2-arm-wheels
+          path: dist_arm/
+          retention-days: 28
