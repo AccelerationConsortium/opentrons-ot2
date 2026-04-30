@@ -23,7 +23,7 @@ RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-
 RUN wget -q https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
     tar xzf openssl-1.1.1w.tar.gz && \
     cd openssl-1.1.1w && \
-    ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl shared zlib && \
+    ./Configure linux-armv4 --prefix=/usr/local/ssl --openssldir=/usr/local/ssl shared zlib no-asm && \
     make -j$(nproc) && \
     make install_sw && \
     echo /usr/local/ssl/lib > /etc/ld.so.conf.d/ssl.conf && ldconfig && \

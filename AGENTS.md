@@ -199,7 +199,10 @@ The OT-2 runs glibc 2.25. When a C-extension wheel fails with "GLIBC_X.XX not fo
 1. Check if a newer package version ships a manylinux_2_17_armv7l wheel (glibc 2.17+) — this is often the fix (e.g. rpds-py 0.7 → 0.30).
 2. Check if the required dependency (e.g. OpenSSL 1.1.1) is available in a distro backports repo (e.g. debian stretch-backports) before building from source.
 3. Only compile from source as a last resort when no pre-built binary exists for glibc <= 2.25.
-For grpcio specifically: no pre-built manylinux armv7l wheel exists on PyPI. It must be compiled from source on Debian Stretch (glibc 2.24) using Python 3.10 (also compiled from source, since Stretch predates Python 3.10 packages) with OpenSSL 1.1.1 from stretch-backports.
+For grpcio specifically: no pre-built manylinux armv7l wheel exists on PyPI. It must be compiled from source on Debian Stretch (glibc 2.24) using Python 3.10 (also compiled from source, since Stretch predates Python 3.10 packages) with OpenSSL 1.1.1 compiled from source. When compiling OpenSSL on arm32v7 inside a container on an ARM64 host, use `./Configure linux-armv4 ... no-asm` — do NOT use `./config` which auto-detects AArch64 and tries to build ARMv8 NEON assembly that fails to assemble in 32-bit mode.
+
+CI Monitoring
+When watching a GitHub Actions run, use: `gh run watch <run-id> --repo <owner/repo> --interval 30` in the background, then `tail -f` its output file. Do NOT write custom Python or shell polling loops that parse the GitHub API — they break on shell variable conflicts and other edge cases. Simple and reliable.
 
 Maintainability and Versioning
 Use semantic versioning
