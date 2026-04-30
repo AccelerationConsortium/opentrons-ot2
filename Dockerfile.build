@@ -44,10 +44,15 @@ RUN wget -q https://www.python.org/ftp/python/3.10.4/Python-3.10.4.tgz && \
 RUN /usr/local/bin/pip3 install --upgrade pip wheel setuptools
 # grpcio 1.46.x bundles abseil-cpp ~20211102 which requires only GCC 5+.
 # grpcio 1.70+ bundles a newer abseil that requires GCC 7+, unavailable on Stretch.
-# _PYTHON_HOST_PLATFORM: uname -m returns aarch64 inside arm32v7 on ARM64 host;
-# override so the wheel is tagged linux_armv7l (the actual binary is arm32 from armhf gcc).
-RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
-    /usr/local/bin/pip3 wheel --no-build-isolation --no-binary grpcio "grpcio==1.46.3" -w /grpc-output/
+# Use setup.py bdist_wheel directly (not pip) to avoid pip's subprocess isolation
+# which hides pkg_resources even when setuptools is installed.
+# _PYTHON_HOST_PLATFORM: force linux_armv7l tag — uname -m returns aarch64 in arm32v7 on ARM64.
+RUN /usr/local/bin/pip3 download --no-binary grpcio --no-deps "grpcio==1.46.3" -d /tmp/grpc-dl/ && \
+    tar xzf /tmp/grpc-dl/grpcio-1.46.3.tar.gz -C /tmp/ && \
+    cd /tmp/grpcio-1.46.3 && \
+    _PYTHON_HOST_PLATFORM=linux-armv7l \
+    /usr/local/bin/python3 setup.py bdist_wheel --dist-dir /grpc-output/ && \
+    rm -rf /tmp/grpcio-1.46.3 /tmp/grpc-dl
 
 
 # Stage 2: Build our package and download remaining deps
