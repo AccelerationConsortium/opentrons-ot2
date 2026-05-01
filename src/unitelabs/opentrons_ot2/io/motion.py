@@ -18,15 +18,9 @@ from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
 from opentrons.drivers.smoothie_drivers.constants import (
     AXES,
 )
+from opentrons.drivers.rpi_drivers import build_gpio_chardev
+from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
-
-# GPIOCharDev and build_gpio_chardev only available on Linux with gpiod
-try:
-    from opentrons.drivers.rpi_drivers import build_gpio_chardev
-    from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
-except ImportError:
-    GPIOCharDev = SimulatingGPIOCharDev  # type: ignore[misc,assignment]
-    build_gpio_chardev = lambda chip_name: SimulatingGPIOCharDev(chip_name)  # type: ignore[misc]
 
 
 log = logging.getLogger(__name__)
@@ -87,6 +81,8 @@ class OT2MotionController:
         else:
             log.info("Building OT2MotionController for real hardware on %s", port)
             gpio = build_gpio_chardev("gpiochip0")
+            gpio.config_by_board_rev()
+            await gpio.setup()
             log.info("GPIO: %s", type(gpio).__name__)
             try:
                 log.info("Connecting to Smoothie on %s ...", port)
