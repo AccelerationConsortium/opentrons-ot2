@@ -20,11 +20,17 @@ from opentrons.drivers.smoothie_drivers.constants import (
 )
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
 
-# GPIOCharDev only available on Linux with gpiod
+# GPIOCharDev and build_gpio_chardev only available on Linux with gpiod
 try:
+    from opentrons.drivers.rpi_drivers import build_gpio_chardev
     from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 except ImportError:
     GPIOCharDev = SimulatingGPIOCharDev  # type: ignore[misc,assignment]
+
+    def build_gpio_chardev(chip_name: str) -> SimulatingGPIOCharDev:  # type: ignore[misc]
+        """Return a simulated GPIO device when gpiod is unavailable."""
+        return SimulatingGPIOCharDev(chip_name)
+
 
 log = logging.getLogger(__name__)
 
@@ -83,14 +89,32 @@ class OT2MotionController:
             )
         else:
             log.info("Building OT2MotionController for real hardware on %s", port)
+            # Use build_gpio_chardev for lights/button control. If board-revision
+            # detection fails (incomplete pin map), fall back to SimulatingGPIOCharDev
+            # for the Smoothie driver so reset-pin calls don't raise KeyError — motion
+            # via serial still works, only GPIO peripherals (lights, button) are affected.
+            real_gpio = build_gpio_chardev("gpiochip0")
+            smoothie_gpio: GPIOCharDev | SimulatingGPIOCharDev
+            if isinstance(real_gpio, SimulatingGPIOCharDev):
+                log.warning("GPIO unavailable — check that no other process holds it (e.g. opentrons-robot-server)")
+                smoothie_gpio = real_gpio
+            else:
+                try:
+                    real_gpio.set_reset_pin(False)  # probe: will KeyError if pin map incomplete
+                    smoothie_gpio = real_gpio
+                    log.info("GPIO ready (%s)", type(real_gpio).__name__)
+                except KeyError:
+                    log.warning(
+                        "GPIO pin map incomplete (board revision not detected) — "
+                        "using simulated GPIO for Smoothie; lights and button unavailable"
+                    )
+                    smoothie_gpio = SimulatingGPIOCharDev("simulated")
             try:
-                gpio = GPIOCharDev("gpio_chip")
-                await gpio.setup()
-                log.info("GPIO ready, connecting to Smoothie on %s ...", port)
+                log.info("Connecting to Smoothie on %s ...", port)
                 driver = await SmoothieDriver.build(
                     port=port,
                     config=config,
-                    gpio_chardev=gpio,
+                    gpio_chardev=smoothie_gpio,
                 )
                 log.info("Smoothie connected on %s", port)
             except Exception:

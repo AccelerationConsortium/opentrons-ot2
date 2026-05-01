@@ -224,6 +224,7 @@ key.pem
 *.tar.gz
 *.tar.bz2
 dist_arm/
+dist_arm_new/
 
 # Configuration default paths
 config.json
