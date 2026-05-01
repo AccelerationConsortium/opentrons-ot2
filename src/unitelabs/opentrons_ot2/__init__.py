@@ -1,11 +1,14 @@
 import collections.abc
 import dataclasses
+import logging
 from importlib.metadata import version
 
 from unitelabs.cdk import Connector, ConnectorBaseConfig, SiLAServerConfig
 
 from .features import MotionControlFeature
 from .io import OT2MotionController
+
+log = logging.getLogger(__name__)
 
 __version__ = version("unitelabs-opentrons-ot2")
 
@@ -37,6 +40,12 @@ async def create_app(config: OpentronsOt2Config) -> collections.abc.AsyncGenerat
 
     Uses the Opentrons driver layer for motion and GPIO control.
     """
+    log.info(
+        "Starting Opentrons OT-2 connector v%s (simulate=%s, port=%s)",
+        __version__,
+        config.use_simulator,
+        config.serial_port,
+    )
     controller = await OT2MotionController.build(
         port=config.serial_port,
         simulate=config.use_simulator,
@@ -44,6 +53,11 @@ async def create_app(config: OpentronsOt2Config) -> collections.abc.AsyncGenerat
 
     app = Connector(config)
     app.register(MotionControlFeature(controller))
+    log.info(
+        "SiLA server listening on %s:%d",
+        config.sila_server.hostname,
+        config.sila_server.port,
+    )
 
     yield app
 

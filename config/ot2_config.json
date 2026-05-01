@@ -1,0 +1,55 @@
+{
+  "sila_server": {
+    "hostname": "0.0.0.0",
+    "port": 50051,
+    "tls": false,
+    "require_client_auth": false,
+    "root_certificates": null,
+    "certificate_chain": null,
+    "private_key": null,
+    "options": {},
+    "uuid": "f036fcea-1756-4f9e-835b-20336f4baf58",
+    "name": "Opentrons OT-2",
+    "type": "LiquidHandler",
+    "description": "SiLA2 connector for Opentrons OT-2 motion and GPIO control",
+    "version": "0.1",
+    "vendor_url": "https://opentrons.com/",
+    "default_lifetime": 3600.0
+  },
+  "cloud_server_endpoint": {
+    "hostname": "localhost",
+    "port": 50000,
+    "tls": true,
+    "root_certificates": null,
+    "certificate_chain": null,
+    "private_key": null,
+    "reconnect_delay": 10000.0,
+    "options": {}
+  },
+  "discovery": {
+    "ip_version": "ipv4",
+    "network_interfaces": []
+  },
+  "logging": {
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+      "simple": {
+        "format": "%(asctime)s %(levelname)s %(name)s: %(message)s"
+      }
+    },
+    "handlers": {
+      "stderr": {
+        "class": "logging.StreamHandler",
+        "stream": "ext://sys.stderr",
+        "formatter": "simple"
+      }
+    },
+    "root": {
+      "level": "INFO",
+      "handlers": ["stderr"]
+    }
+  },
+  "use_simulator": false,
+  "serial_port": "/dev/ttyAMA0"
+}

@@ -74,22 +74,32 @@ class OT2MotionController:
         config = load_ot2()
 
         if simulate:
+            log.info("Building OT2MotionController in simulation mode")
             gpio = SimulatingGPIOCharDev("simulated")
-            # Build driver in simulation mode (no connection)
             driver = SmoothieDriver(
                 config=config,
                 gpio_chardev=gpio,
                 connection=None,  # None = simulation mode
             )
         else:
-            # Real hardware
-            gpio = GPIOCharDev("gpio_chip")
-            await gpio.setup()
-            driver = await SmoothieDriver.build(
-                port=port,
-                config=config,
-                gpio_chardev=gpio,
-            )
+            log.info("Building OT2MotionController for real hardware on %s", port)
+            try:
+                gpio = GPIOCharDev("gpio_chip")
+                await gpio.setup()
+                log.info("GPIO ready, connecting to Smoothie on %s ...", port)
+                driver = await SmoothieDriver.build(
+                    port=port,
+                    config=config,
+                    gpio_chardev=gpio,
+                )
+                log.info("Smoothie connected on %s", port)
+            except Exception:
+                log.exception(
+                    "Failed to connect to Smoothie on %s — "
+                    "check that no other process holds the port (e.g. opentrons-robot-server)",
+                    port,
+                )
+                raise
 
         return cls(smoothie_driver=driver, gpio=gpio)
 
