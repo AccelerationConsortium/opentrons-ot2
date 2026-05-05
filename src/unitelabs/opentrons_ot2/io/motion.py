@@ -201,11 +201,11 @@ class OT2MotionController:
         """Emergency stop - halt all motion."""
         await self._driver.hard_halt()
 
-    async def resume(self) -> None:
+    def resume(self) -> None:
         """Resume after pause."""
         self._driver.resume()
 
-    async def pause(self) -> None:
+    def pause(self) -> None:
         """Pause motion."""
         self._driver.pause()
 

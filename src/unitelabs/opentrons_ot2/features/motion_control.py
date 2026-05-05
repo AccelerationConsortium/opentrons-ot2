@@ -243,13 +243,13 @@ class MotionControlFeature(sila.Feature):
     @sila.UnobservableCommand()
     async def pause(self) -> str:
         """Pause motion execution."""
-        await self._controller.pause()
+        self._controller.pause()
         return "Motion paused"
 
     @sila.UnobservableCommand()
     async def resume(self) -> str:
         """Resume motion execution after pause."""
-        await self._controller.resume()
+        self._controller.resume()
         return "Motion resumed"
 
     @sila.UnobservableProperty()
