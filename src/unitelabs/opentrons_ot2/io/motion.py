@@ -18,7 +18,6 @@ from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
 from opentrons.drivers.smoothie_drivers.constants import (
     AXES,
 )
-from opentrons.drivers.rpi_drivers import build_gpio_chardev
 from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
 
@@ -80,7 +79,7 @@ class OT2MotionController:
             )
         else:
             log.info("Building OT2MotionController for real hardware on %s", port)
-            gpio = build_gpio_chardev("gpiochip0")
+            gpio = GPIOCharDev("gpiochip0")
             gpio.config_by_board_rev()
             await gpio.setup()
             log.info("GPIO: %s", type(gpio).__name__)

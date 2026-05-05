@@ -311,8 +311,7 @@ class MotionControlFeature(sila.Feature):
             Current button light state.
         """
         self._controller.set_button_light(red=red, green=green, blue=blue)
-        r, g, b = self._controller.get_button_light()
-        return ButtonLight(red=r, green=g, blue=b)
+        return ButtonLight(red=red, green=green, blue=blue)
 
     @sila.UnobservableCommand()
     def get_button_light(self) -> ButtonLight:
