@@ -1,16 +1,9 @@
 #!/bin/sh
-# Start the SiLA2 OT-2 connector on the robot.
-# Usage: ssh root@<host> "sh /root/start_connector.sh"
-# Or deploy this file to the robot and run it directly.
+# Manage the SiLA2 OT-2 connector service.
+# Usage: ssh root@<host> "sh /data/start_connector.sh [start|stop|restart|status]"
+# Default action is restart.
 set -e
 
-VENV=/var/sila2_ot2
-CONFIG=$VENV/config.json
+ACTION="${1:-restart}"
 
-exec env \
-    PYTHONUNBUFFERED=1 \
-    RUNNING_ON_PI=true \
-    OT_SMOOTHIE_ID=AMA \
-    "$VENV/bin/connector" start \
-    --app unitelabs.opentrons_ot2:create_app \
-    --config-path "$CONFIG"
+systemctl "$ACTION" sila2-connector

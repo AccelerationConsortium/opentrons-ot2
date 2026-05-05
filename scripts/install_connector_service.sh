@@ -1,0 +1,42 @@
+#!/bin/sh
+# Install the SiLA2 connector as a systemd service on the OT-2.
+# Disables the Opentrons robot server first so we get exclusive hardware access.
+# Usage: ./scripts/install_connector_service.sh <host>
+set -e
+
+HOST="${1:?Usage: $0 <host>}"
+SCRIPT_DIR="$(dirname "$0")"
+
+echo "Copying start_connector.sh to robot..."
+scp "$SCRIPT_DIR/start_connector.sh" "root@$HOST:/data/start_connector.sh"
+
+ssh "root@${HOST}" '
+set -e
+mount -o remount,rw /
+
+echo "Disabling opentrons-robot-server..."
+systemctl disable opentrons-robot-server || true
+systemctl stop opentrons-robot-server || true
+
+echo "Installing sila2-connector service..."
+cat > /etc/systemd/system/sila2-connector.service << EOF
+[Unit]
+Description=SiLA2 OT-2 Connector
+After=network.target opentrons-init-connections.service
+Wants=opentrons-init-connections.service
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /data/start_connector.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable sila2-connector
+systemctl start sila2-connector
+systemctl status sila2-connector --no-pager
+'

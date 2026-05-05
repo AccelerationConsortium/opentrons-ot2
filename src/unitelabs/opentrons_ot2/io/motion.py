@@ -18,11 +18,37 @@ from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
 from opentrons.drivers.smoothie_drivers.constants import (
     AXES,
 )
+from opentrons.drivers.smoothie_drivers.errors import SmoothieAlarm, SmoothieError
 from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
 
 
 log = logging.getLogger(__name__)
+
+
+class _RaisingSmoothieDriver(SmoothieDriver):
+    """
+    SmoothieDriver that raises on alarm lock instead of silently swallowing it.
+
+    The upstream driver swallows 'alarm lock' and 'after halt you should home'
+    outside of a hard halt to avoid masking the original exception during
+    recovery. Outside that context the silent fallthrough hides motion failures
+    from callers entirely, so we raise instead.
+    """
+
+    def _handle_return(self, ret_code: str, is_alarm: bool = False, is_error: bool = False) -> None:
+        if self._is_hard_halting.is_set():
+            if is_alarm:
+                self._is_hard_halting.clear()
+                raise SmoothieAlarm(ret_code)
+            if is_error:
+                raise SmoothieError(ret_code)
+        else:
+            if is_alarm or is_error:
+                if "instrument found" in ret_code.lower():
+                    log.info("smoothie: %s", ret_code)
+                raise SmoothieError(ret_code)
+
 
 # Default port on OT-2
 DEFAULT_SMOOTHIE_PORT = "/dev/ttyAMA0"
@@ -85,7 +111,7 @@ class OT2MotionController:
             log.info("GPIO: %s", type(gpio).__name__)
             try:
                 log.info("Connecting to Smoothie on %s ...", port)
-                driver = await SmoothieDriver.build(
+                driver = await _RaisingSmoothieDriver.build(
                     port=port,
                     config=config,
                     gpio_chardev=gpio,

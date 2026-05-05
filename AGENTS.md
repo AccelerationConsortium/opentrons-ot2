@@ -209,6 +209,17 @@ Use concrete driver classes directly (e.g. GPIOCharDev), not wrapper functions w
 Simulation is explicit and opt-in via simulate=True only — never automatic on error.
 If you see except (ImportError, OSError): return SimulatingFoo() anywhere, remove it.
 
+OT-2 Axis Reference
+
+| Axis | Description | Limit Switch |
+|------|-------------|--------------|
+| X | Gantry right (+X) and left (-X) | +X |
+| Y | Gantry back, away from front window (+Y) and forward, towards front window (-Y) | +Y |
+| Z | Left pipette mount up (+Z) and down (-Z) | +Z |
+| A | Right pipette mount up (+A) and down (-A) | +A |
+| B | Left pipette plunger up (+B) and down (-B) | +B |
+| C | Right pipette plunger up (+C) and down (-C) | +C |
+
 CI Monitoring
 When watching a GitHub Actions run, use: `gh run watch <run-id> --repo <owner/repo> --interval 30` in the background, then `tail -f` its output file. Do NOT write custom Python or shell polling loops that parse the GitHub API — they break on shell variable conflicts and other edge cases. Simple and reliable.
 

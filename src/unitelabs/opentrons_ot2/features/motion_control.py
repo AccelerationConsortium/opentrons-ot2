@@ -6,6 +6,7 @@ Uses the OT2MotionController wrapper around Opentrons SmoothieDriver.
 
 from dataclasses import dataclass
 
+from opentrons.drivers.smoothie_drivers.errors import TipProbeError
 from unitelabs.cdk import sila
 
 from ..io import OT2MotionController
@@ -76,11 +77,12 @@ class MotionControlFeature(sila.Feature):
     and emergency stop via the Opentrons SmoothieDriver.
 
     Axes:
-    - X, Y: Gantry horizontal movement
-    - Z: Left pipette mount vertical
-    - A: Right pipette mount vertical
-    - B: Left pipette plunger
-    - C: Right pipette plunger
+    - X: Gantry right (+X) / left (-X). Limit switch at +X.
+    - Y: Gantry back (+Y) / forward toward front window (-Y). Limit switch at +Y.
+    - Z: Left pipette mount up (+Z) / down (-Z). Limit switch at +Z.
+    - A: Right pipette mount up (+A) / down (-A). Limit switch at +A.
+    - B: Left pipette plunger up (+B) / down (-B). Limit switch at +B.
+    - C: Right pipette plunger up (+C) / down (-C). Limit switch at +C.
     """
 
     def __init__(self, controller: OT2MotionController):
@@ -208,7 +210,7 @@ class MotionControlFeature(sila.Feature):
         position = await self._controller.get_position()
         return _dict_to_position(position)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[TipProbeError])
     async def probe(self, axis: str, distance: float) -> AxisPosition:
         """
         Probe along an axis until contact.
