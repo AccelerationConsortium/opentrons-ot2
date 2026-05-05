@@ -21,15 +21,12 @@ Example usage:
         await controller.disconnect()
 """
 
+from ._types import RPM, Temperature
+from .heater_shaker import HeaterShakerController
+from .magnetic_module import MagneticModuleController
 from .motion import OT2MotionController
-from .modules import (
-    HeaterShakerController,
-    ThermocyclerController,
-    TemperatureModuleController,
-    MagneticModuleController,
-    Temperature,
-    RPM,
-)
+from .temperature_module import TemperatureModuleController
+from .thermocycler import ThermocyclerController
 
 __all__ = [
     "RPM",
