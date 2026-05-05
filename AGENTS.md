@@ -203,6 +203,12 @@ For grpcio specifically: no pre-built manylinux armv7l wheel exists on PyPI. It 
 
 OT-2 pip.conf pitfall: The OT-2 ships `/etc/pip.conf` containing `root = /var/user-packages`. This silently redirects every `pip install` call — including inside a venv — so packages land in `/var/user-packages/var/<venv>/lib/python3.10/site-packages/` instead of the venv's own site-packages. The venv's Python never sees them and imports fail. Fix: always pass `--root /` to pip when installing into a venv on the OT-2 — this overrides the config-file root on the command line, so packages land in the venv's own site-packages. Note: `--isolated` does NOT fix this; it only suppresses user-level config (~/.pip/pip.conf), not site-level (/etc/pip.conf). Also: call the venv's pip binary directly (`"$VENV_PATH/bin/pip" install --root / ...`) rather than using `source activate`, since the install script runs under `sh` (no bash on OT-2). Do NOT use `#!/bin/bash` in scripts deployed to the OT-2.
 
+Hardware Driver Rules
+Never use or introduce silent fallback-to-simulation patterns for hardware drivers. If hardware (GPIO, serial, etc.) fails to initialise, raise an error immediately — do not catch the exception and substitute a no-op simulator.
+Use concrete driver classes directly (e.g. GPIOCharDev), not wrapper functions with silent fallbacks (e.g. build_gpio_chardev).
+Simulation is explicit and opt-in via simulate=True only — never automatic on error.
+If you see except (ImportError, OSError): return SimulatingFoo() anywhere, remove it.
+
 CI Monitoring
 When watching a GitHub Actions run, use: `gh run watch <run-id> --repo <owner/repo> --interval 30` in the background, then `tail -f` its output file. Do NOT write custom Python or shell polling loops that parse the GitHub API — they break on shell variable conflicts and other edge cases. Simple and reliable.
 
