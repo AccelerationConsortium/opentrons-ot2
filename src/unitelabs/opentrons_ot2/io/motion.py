@@ -294,6 +294,14 @@ class OT2MotionController:
         """Disconnect from Smoothie."""
         await self._driver.disconnect()
 
+    async def reset_from_error(self) -> None:
+        """Clear alarm lock state (M999)."""
+        await self._driver._reset_from_error()
+
+    async def smoothie_reset(self) -> None:
+        """Full hardware GPIO reset of the Smoothie."""
+        await self._driver._smoothie_reset()
+
     async def is_connected(self) -> bool:
         """Check if connected to Smoothie."""
         return await self._driver.is_connected()

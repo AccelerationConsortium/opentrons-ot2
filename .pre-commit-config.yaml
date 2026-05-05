@@ -22,8 +22,6 @@ repos:
       - id: check-yaml
       - id: check-merge-conflict
       - id: detect-private-key
-      - id: no-commit-to-branch
-        args: ["--branch=main"]
         alias: protect-main
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0

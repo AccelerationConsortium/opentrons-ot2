@@ -108,7 +108,7 @@ class MotionControlFeature(sila.Feature):
         Returns:
             HomeResult with the homed axes and final position.
         """
-        axes = axes.upper()
+        axes = axes.upper() or AXES
         valid_axes = set(AXES)
         requested = set(axes)
 
@@ -257,9 +257,7 @@ class MotionControlFeature(sila.Feature):
         """Check if running in simulation mode."""
         return self._controller.is_simulating
 
-    @sila.UnobservableProperty()
-    def homed_flags(self) -> HomedFlags:
-        """Get homing status for each axis."""
+    def _build_homed_flags(self) -> HomedFlags:
         flags = self._controller.homed_flags
         return HomedFlags(
             x=flags.get("X", False),
@@ -270,10 +268,27 @@ class MotionControlFeature(sila.Feature):
             c=flags.get("C", False),
         )
 
+    @sila.UnobservableProperty()
+    def homed_flags(self) -> HomedFlags:
+        """Get homing status for each axis."""
+        return self._build_homed_flags()
+
     @sila.UnobservableCommand()
     async def get_firmware_version(self) -> str:
         """Get the Smoothie firmware version."""
         return await self._controller.get_firmware_version()
+
+    @sila.UnobservableCommand()
+    async def reset_from_error(self) -> HomedFlags:
+        """Clear alarm lock state (M999). Returns homed flags after reset."""
+        await self._controller.reset_from_error()
+        return self._build_homed_flags()
+
+    @sila.UnobservableCommand()
+    async def smoothie_reset(self) -> HomedFlags:
+        """Perform a full hardware GPIO reset of the Smoothie. Returns homed flags after reset."""
+        await self._controller.smoothie_reset()
+        return self._build_homed_flags()
 
     # ============ GPIO Control ============
 
