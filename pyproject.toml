@@ -107,8 +107,6 @@ ignore = [
 "!src/**.py" = ["D", "ANN", "ARG", "S101", "EM", "BLE", "PTH", "T201", "FIX", "ERA", "E7", "S", "B"]
 # ignore parameter name warnings in feature files
 "src/unitelabs/opentrons_ot2/features/**/**.py" =  ["D417", "EM"]
-# legacy driver wrapper — not subject to strict style enforcement
-"src/unitelabs/opentrons_ot2/io/_legacy_direct.py" = ["D", "EM", "PTH", "PLW", "SIM", "ARG"]
 # test scripts outside the tests/ suite
 "test_*.py" = ["E402"]
 
