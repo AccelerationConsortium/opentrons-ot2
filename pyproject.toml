@@ -149,6 +149,10 @@ post_bump_hooks = [
     "git push origin main --tags --follow-tags --no-verify -o ci.skip",
 ]
 
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*"]
+
 [tool.coverage.report]
 exclude_also = [
     "@typing.overload",

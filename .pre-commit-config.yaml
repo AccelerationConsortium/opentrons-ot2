@@ -30,3 +30,11 @@ repos:
     hooks:
       - id: markdownlint-fix
         args: ["--disable=MD013", "--disable=MD033", "--disable=MD024", "--disable=MD041", "--ignore=.gitlab/**/*.md"]
+  - repo: local
+    hooks:
+      - id: sonar
+        name: SonarQube local scan
+        language: system
+        entry: sonar-scanner
+        pass_filenames: false
+        stages: [manual]
