@@ -82,7 +82,12 @@ RUN python -m build --wheel && \
     printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\n' > /tmp/in.txt && \
     printf 'jsonschema>=4.25\n' > /tmp/overrides.txt && \
     uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
-    pip download --no-deps -d /output/ -r /tmp/resolved.txt && \
+    # Explicit armv7l platform tags: without these, pip's platform detection inside
+    # the arm32v7 container falls back to source tarballs for binary packages (numpy).
+    pip download --no-deps -d /output/ \
+        --platform manylinux_2_17_armv7l --platform linux_armv7l \
+        --python-version 310 --implementation cp --abi cp310 \
+        -r /tmp/resolved.txt && \
     rm -f /output/grpcio-*
 
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
