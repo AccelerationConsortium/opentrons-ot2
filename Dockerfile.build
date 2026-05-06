@@ -74,11 +74,15 @@ COPY config/ config/
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
+    # uv pip compile resolves the full dep tree with a jsonschema>=4.25 override
+    # (mirrors pyproject.toml [tool.uv].override-dependencies). pip then downloads
+    # from the already-pinned list with --no-deps so no re-resolution happens.
+    # grpcio appears in the resolved list; pip fetches its source tarball (no
+    # armv7l wheel on PyPI) which install.sh ignores — replaced by Stage 1 wheel.
+    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\n' > /tmp/in.txt && \
     printf 'jsonschema>=4.25\n' > /tmp/overrides.txt && \
-    uv pip download \
-        --override /tmp/overrides.txt \
-        --output-dir /output/ \
-        "unitelabs-cdk~=0.9.0" "opentrons==8.8.1" "numpy<1.25" && \
-    rm -f /output/grpcio-*.whl
+    uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
+    pip download --no-deps -d /output/ -r /tmp/resolved.txt && \
+    rm -f /output/grpcio-*
 
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
