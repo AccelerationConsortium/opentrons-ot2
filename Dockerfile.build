@@ -61,16 +61,24 @@ RUN wget -q -O /tmp/grpcio-1.46.3.tar.gz \
 FROM arm32v7/python:3.10-slim-bookworm AS builder
 
 WORKDIR /build
-RUN pip install --upgrade pip wheel build
+RUN pip install --upgrade pip wheel build uv
 
 COPY pyproject.toml README.md ./
 COPY src/ src/
 COPY config/ config/
 
+# jsonschema override: opentrons==8.8.1 declares jsonschema<4.18.0, but
+# unitelabs-sila (via unitelabs-cdk) requires jsonschema~=4.25. uv's
+# --override flag resolves this, mirroring pyproject.toml's
+# [tool.uv].override-dependencies = ["jsonschema>=4.25"].
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
-    pip download -d /output/ "unitelabs-cdk~=0.9.0" && \
+    printf 'jsonschema>=4.25\n' > /tmp/overrides.txt && \
+    uv pip download \
+        --override /tmp/overrides.txt \
+        --output-dir /output/ \
+        "unitelabs-cdk~=0.9.0" "opentrons==8.8.1" "numpy<1.25" && \
     rm -f /output/grpcio-*.whl
 
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
