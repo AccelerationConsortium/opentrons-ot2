@@ -57,7 +57,15 @@ RUN wget -q -O /tmp/grpcio-1.46.3.tar.gz \
     rm -rf /tmp/grpcio-1.46.3 /tmp/grpcio-1.46.3.tar.gz
 
 
-# Stage 2: Build our package and download remaining deps
+# Stage 2: Compile numpy for armv7l — no prebuilt wheel exists on PyPI for this platform.
+FROM arm32v7/python:3.10-slim-bookworm AS numpy-builder
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gfortran libopenblas-dev pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+RUN pip wheel "numpy>=1.20,<1.25" --no-deps --wheel-dir=/numpy-output/
+
+
+# Stage 3: Build our package and download remaining deps
 FROM arm32v7/python:3.10-slim-bookworm AS builder
 
 WORKDIR /build
@@ -82,12 +90,13 @@ RUN python -m build --wheel && \
     printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\n' > /tmp/in.txt && \
     printf 'jsonschema>=4.25\n' > /tmp/overrides.txt && \
     uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
-    # Explicit armv7l platform tags: without these, pip's platform detection inside
-    # the arm32v7 container falls back to source tarballs for binary packages (numpy).
+    # Exclude numpy and grpcio: both have no armv7l wheel on PyPI and are compiled
+    # from source in separate stages (numpy-builder, grpc-builder).
+    grep -v '^numpy\|^grpcio' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 310 --implementation cp --abi cp310 \
-        -r /tmp/resolved.txt && \
-    rm -f /output/grpcio-*
+        -r /tmp/resolved_filtered.txt
 
+COPY --from=numpy-builder /numpy-output/numpy-*.whl /output/
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
