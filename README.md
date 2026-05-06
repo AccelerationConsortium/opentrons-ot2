@@ -6,7 +6,11 @@ A SiLA2 connector for the Opentrons OT-2 liquid handling robot
 
 ### Prerequisites
 
-Ensure that Python 3.10 or newer is installed on your system. You can download Python from the official website [python.org](https://www.python.org/downloads/).
+Ensure that [uv](https://docs.astral.sh/uv/) is installed on your system. You can install it with:
+
+```sh
+pipx install uv
+```
 
 ### Installation
 
@@ -15,7 +19,7 @@ Ensure that Python 3.10 or newer is installed on your system. You can download P
 It is highly recommended to use a virtual environment to manage the dependencies for your connector project. This keeps the dependencies for different connectors isolated from each other. Use the following command to create a virtual environment:
 
 ```sh
-python -m venv venv
+uv venv
 ```
 
 Activate the virtual environment:
@@ -42,17 +46,17 @@ Setting this environment variable will allow you to run varous CLI commands with
 
 #### Install Required Dependencies
 
-Install the necessary Python packages into your active virtual environment. Use pip to download the connector along with its dependencies:
+Install the necessary Python packages into your active virtual environment:
 
 ```sh
-python -m pip install unitelabs-opentrons-ot2 \
+uv pip install unitelabs-opentrons-ot2 \
   --index-url https://gitlab.com/api/v4/groups/1009252/-/packages/pypi/simple
 ```
 
-If you are working with a private connector repository, authenticate pip to allow access:
+If you are working with a private connector repository, authenticate to allow access:
 
 ```sh
-python -m pip install unitelabs-opentrons-ot2 \
+uv pip install unitelabs-opentrons-ot2 \
   --index-url https://<username>:<password>@gitlab.com/api/v4/groups/1009252/-/packages/pypi/simple
 ```
 
@@ -160,11 +164,22 @@ Then on the robot:
 bash /root/dist_arm/install.sh
 ```
 
-This creates a venv at `/opt/sila2_ot2` with `--system-site-packages` so the connector
-can access the system `opentrons` package. Start the connector with:
+Then install the connector as a persistent systemd service (disables the Opentrons robot server):
 
 ```sh
-/opt/sila2_ot2/bin/python -m unitelabs.opentrons_ot2
+./scripts/install_connector_service.sh <ot2-ip>
+```
+
+To deploy Python source changes to a robot that already has the service installed:
+
+```sh
+./scripts/deploy_python_changes.sh <ot2-ip>
+```
+
+Logs:
+
+```sh
+ssh root@<ot2-ip> 'journalctl -u sila2-connector -f'
 ```
 
 ### Why `--system-site-packages`
@@ -182,7 +197,7 @@ To interact with the running connector, we recommend using the [SiLA Browser](ht
 To secure communication between the connector and its clients, you can enable TLS encryption. Start by installing the optional `cryptography` package for generating TLS certificates:
 
 ```sh
-python -m pip install cryptography
+uv pip install cryptography
 ```
 
 To generate a pair of public and private keys, use the following command:

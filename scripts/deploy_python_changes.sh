@@ -16,6 +16,8 @@ echo "Clearing __pycache__ on robot..."
 ssh "root@$HOST" "find '$REMOTE_PKG' -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
 
 echo "Restarting sila2-connector service on robot..."
-ssh "root@$HOST" "systemctl restart sila2-connector && systemctl status sila2-connector --no-pager"
+ssh "root@$HOST" "systemctl restart sila2-connector"
+sleep 2
+ssh "root@$HOST" "systemctl is-active sila2-connector"
 
 echo "Done. Logs: ssh root@$HOST 'journalctl -u sila2-connector -f'"
