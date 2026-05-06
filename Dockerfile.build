@@ -62,7 +62,9 @@ FROM arm32v7/python:3.10-slim-bookworm AS numpy-builder
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential gfortran libopenblas-dev pkg-config && \
     rm -rf /var/lib/apt/lists/*
-RUN pip wheel "numpy>=1.20,<1.25" --no-deps --wheel-dir=/numpy-output/
+# _PYTHON_HOST_PLATFORM: force armv7l tag — uname -m returns aarch64 in arm32v7 on ARM64.
+RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
+    pip wheel "numpy>=1.20,<1.25" --no-deps --wheel-dir=/numpy-output/
 
 
 # Stage 3: Build our package and download remaining deps
