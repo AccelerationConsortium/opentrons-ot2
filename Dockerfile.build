@@ -70,7 +70,7 @@ COPY config/ config/
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
-    pip download -d /output/ "unitelabs-cdk~=0.9.0" "opentrons==8.8.1" && \
+    pip download -d /output/ "unitelabs-cdk~=0.9.0" "opentrons==8.8.1" "numpy<1.25" && \
     rm -f /output/grpcio-*.whl
 
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
