@@ -962,7 +962,8 @@ wheels = [
 
 [[package]]
 name = "opentrons"
-source = { editable = "../../opentrons/api" }
+version = "8.8.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aionotify" },
     { name = "anyio" },
@@ -973,127 +974,27 @@ dependencies = [
     { name = "packaging" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pyro5" },
     { name = "pyserial" },
     { name = "pyusb" },
     { name = "typing-extensions" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aionotify", specifier = "==0.3.1" },
-    { name = "anyio", specifier = ">=4.9.0,<5.0.0" },
-    { name = "click", specifier = ">=8.0.0,<9" },
-    { name = "importlib-metadata", marker = "python_full_version < '3.8'", specifier = ">=1.0" },
-    { name = "jsonschema", specifier = ">=3.0.1,<4.18.0" },
-    { name = "numpy", specifier = ">=1.20.0,<2" },
-    { name = "numpy", specifier = ">=1.26.4,<2" },
-    { name = "opentrons-shared-data", editable = "../../opentrons/shared-data" },
-    { name = "packaging", specifier = ">=25.0" },
-    { name = "pydantic", specifier = ">=2.0.0,<3" },
-    { name = "pydantic-settings", specifier = ">=2,<3" },
-    { name = "pyro5", specifier = ">=5.16,<6" },
-    { name = "pyserial", specifier = ">=3.5" },
-    { name = "pyusb", specifier = "==1.2.1" },
-    { name = "typing-extensions", specifier = ">=4.0.0,<5" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "anyio", specifier = "==4.9.0" },
-    { name = "build", specifier = "~=1.2.0" },
-    { name = "coverage", specifier = "==7.4.1" },
-    { name = "decoy", specifier = ">=2.2.0,<3" },
-    { name = "hypothesis", specifier = ">=6.96.1,<7" },
-    { name = "jinja2", specifier = ">=2.3,<3.1" },
-    { name = "jsonschema", specifier = "==4.17.3" },
-    { name = "mock", specifier = "==5.1.0" },
-    { name = "mypy", specifier = "==1.19.1" },
-    { name = "numpy", specifier = "==1.26.4" },
-    { name = "numpydoc", specifier = "==0.9.1" },
-    { name = "opentrons-hardware", extras = ["flex"], editable = "../../opentrons/hardware" },
-    { name = "packaging", specifier = "==25.0" },
-    { name = "performance-metrics", editable = "../../opentrons/performance-metrics" },
-    { name = "pydantic", specifier = "==2.11.7" },
-    { name = "pydantic-settings", specifier = "==2.4.0" },
-    { name = "pyro5", specifier = "==5.16" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0,<2" },
-    { name = "pytest-cov", specifier = "==4.1.0" },
-    { name = "pytest-lazy-fixtures", specifier = ">=1.1.4,<2" },
-    { name = "pytest-profiling", specifier = "~=1.7.0" },
-    { name = "pytest-xdist", specifier = "~=2.5.0" },
-    { name = "pyusb", specifier = "==1.2.1" },
-    { name = "ruff", specifier = "==0.14.10" },
-    { name = "sphinx", specifier = "==5.0.1" },
-    { name = "sphinx-substitution-extensions", specifier = "==2020.9.30.0" },
-    { name = "sphinx-tabs", specifier = ">=3.4.1,<4" },
-    { name = "sphinxext-opengraph", specifier = "==0.8.1" },
-    { name = "twine", specifier = "==4.0.0" },
-    { name = "typeguard", specifier = "~=4.4.4" },
-    { name = "types-mock", specifier = "~=5.1.0" },
-    { name = "types-setuptools", specifier = "==57.0.2" },
-    { name = "typing-extensions", specifier = ">=4.0.0,<5" },
-    { name = "wheel", specifier = "==0.37.0" },
-    { name = "zipp", specifier = "==3.21.0" },
-]
-robot = [
-    { name = "anyio", specifier = "==4.9.0" },
-    { name = "jsonschema", specifier = "==4.17.3" },
-    { name = "numpy", specifier = "==1.26.4" },
-    { name = "opentrons-hardware", extras = ["flex"], editable = "../../opentrons/hardware" },
-    { name = "packaging", specifier = "==25.0" },
-    { name = "pydantic", specifier = "==2.11.7" },
-    { name = "pydantic-settings", specifier = "==2.4.0" },
-    { name = "pyro5", specifier = "==5.16" },
-    { name = "pyusb", specifier = "==1.2.1" },
-    { name = "zipp", specifier = "==3.21.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/53/68/cd35ecf658e14d208040b3b9bb8f74f8271da2eff6c03f26ed2256853b04/opentrons-8.8.1.tar.gz", hash = "sha256:03b69936e2152f53e181ab06be3c7319d4b40848b78b2eafd53658ea77c9b9a9", size = 2152732, upload-time = "2026-01-21T20:03:50.115Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/75/9c0729f32782acd6e22c520646fd7260ea5c999b9e909c06fb83eba5f617/opentrons-8.8.1-py3-none-any.whl", hash = "sha256:4fbafd5fcd58fff04b76300f79d4423310e36667fed3ac654495be56474a6089", size = 1868281, upload-time = "2026-01-21T20:03:47.567Z" },
 ]
 
 [[package]]
 name = "opentrons-shared-data"
-source = { editable = "../../opentrons/shared-data" }
+version = "8.8.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonschema" },
-    { name = "numpy" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "jsonschema", specifier = ">=4.0.0,<5" },
-    { name = "numpy", specifier = "~=1.26.4" },
-    { name = "pydantic", specifier = ">=2.0.0,<3.0.0" },
-    { name = "typing-extensions", specifier = ">=4.0.0,<5" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "build", specifier = "~=1.2.0" },
-    { name = "jsonschema", specifier = "==4.17.3" },
-    { name = "mypy", specifier = "==1.19.1" },
-    { name = "numpy", specifier = "==1.26.4" },
-    { name = "pillow" },
-    { name = "pydantic", specifier = "==2.11.7" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-clarity", specifier = "~=1.0.0" },
-    { name = "pytest-cov", specifier = "==4.1.0" },
-    { name = "pytest-xdist", specifier = "~=3.5.0" },
-    { name = "ruff", specifier = "==0.14.10" },
-    { name = "setuptools", specifier = "==80.9.0" },
-    { name = "twine", specifier = "==4.0.0" },
-    { name = "typeguard", specifier = "~=4.4.4" },
-    { name = "types-pillow" },
-    { name = "typing-extensions", specifier = ">=4.0.0,<5" },
-    { name = "wheel", specifier = "==0.37.1" },
-    { name = "zipp", specifier = "==3.21.0" },
-]
-robot = [
-    { name = "jsonschema", specifier = "==4.17.3" },
-    { name = "numpy", specifier = "==1.26.4" },
-    { name = "pydantic", specifier = "==2.11.7" },
-    { name = "zipp", specifier = "==3.21.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/51/dd/e78bc19ccb81c4c65f51797e3c5d2f27ecf90612779243af18b8e0a9efb1/opentrons_shared_data-8.8.1.tar.gz", hash = "sha256:0c968f0b0ec099a429d64703284b4f0f11c7db82307819787bc6c4066c06c6cb", size = 658761, upload-time = "2026-01-21T19:53:48.494Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/e2/70466d7c78cb5043a309ff93a0fa9333d7b3d991f66d540454966196fb0d/opentrons_shared_data-8.8.1-py3-none-any.whl", hash = "sha256:4dcf7670e7932001cce7757234168c5387a244ab290e4f32fdf6cdfa6a6db90a", size = 1169517, upload-time = "2026-01-21T19:53:46.518Z" },
 ]
 
 [[package]]
@@ -1312,18 +1213,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
-]
-
-[[package]]
-name = "pyro5"
-version = "5.16"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "serpent" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6e/ab/38d7adb02f735f409e6af78951630f887590a885b2583c83cfe93a60b576/pyro5-5.16.tar.gz", hash = "sha256:d40418ed2acee0d9093daf5023ed0b0cb485a6b62342934adb9e801956f5738b", size = 448592, upload-time = "2025-12-21T18:33:58.552Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/4d/7713c06c1a9eaa35142e232e89da5300cac09156977204c730b28f37eaec/pyro5-5.16-py3-none-any.whl", hash = "sha256:ea33cad29993fd44ce394ef45950e8dc5805ee12c4dd76541a8dd11c40694706", size = 79294, upload-time = "2025-12-21T18:33:57.096Z" },
 ]
 
 [[package]]
@@ -1711,15 +1600,6 @@ wheels = [
 ]
 
 [[package]]
-name = "serpent"
-version = "1.42"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/06/3c/7ecf39b48121cb6490634bfcb1b1c5cac7d7a216805d889b0676a2e8493f/serpent-1.42.tar.gz", hash = "sha256:8ea082b01f8ba07ecd74e34a9118ac4521bc4594938d912b808c89f1da425506", size = 90352, upload-time = "2025-10-26T21:58:13.871Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/24/73031e6bd25d8f94811b3752b0b217efbdb20a67b65c6838c9af4e50c2e2/serpent-1.42-py3-none-any.whl", hash = "sha256:a02f5a4fcf3b41ee6204b36c3cf026bf0433ffe15b6a7fc8a37e0bff74d87575", size = 9663, upload-time = "2025-10-26T21:58:12.565Z" },
-]
-
-[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1937,7 +1817,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "commitizen", marker = "extra == 'dev'" },
-    { name = "opentrons", editable = "../../opentrons/api" },
+    { name = "opentrons", specifier = "==8.8.1" },
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "pytest-asyncio", marker = "extra == 'test'" },
