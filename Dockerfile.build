@@ -60,7 +60,7 @@ RUN wget -q -O /tmp/grpcio-1.46.3.tar.gz \
 # Stage 2: Compile numpy for armv7l — no prebuilt wheel exists on PyPI for this platform.
 FROM arm32v7/python:3.10-slim-bookworm AS numpy-builder
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gfortran libopenblas-dev pkg-config && \
+    apt-get install -y --no-install-recommends build-essential gfortran libopenblas-dev pkg-config && \
     rm -rf /var/lib/apt/lists/*
 RUN pip wheel "numpy>=1.20,<1.25" --no-deps --wheel-dir=/numpy-output/
 
