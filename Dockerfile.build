@@ -89,7 +89,7 @@ RUN python -m build --wheel && \
     # from the already-pinned list with --no-deps so no re-resolution happens.
     # grpcio appears in the resolved list; pip fetches its source tarball (no
     # armv7l wheel on PyPI) which install.sh ignores — replaced by Stage 1 wheel.
-    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\n' > /tmp/in.txt && \
+    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\nsix>=1.5.2\n' > /tmp/in.txt && \
     printf 'jsonschema>=4.25\n' > /tmp/overrides.txt && \
     uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
     # Exclude numpy and grpcio: both have no armv7l wheel on PyPI and are compiled
