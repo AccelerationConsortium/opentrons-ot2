@@ -57,7 +57,31 @@ RUN wget -q -O /tmp/grpcio-1.46.3.tar.gz \
     rm -rf /tmp/grpcio-1.46.3 /tmp/grpcio-1.46.3.tar.gz
 
 
-# Stage 2: Compile numpy for armv7l on Debian Stretch (glibc 2.24).
+# Stage 2: Compile gpiod Python bindings for armv7l.
+# The official libgpiod 1.x Python bindings (PascalCase API: Chip, Line, etc.) are not
+# on PyPI — the PyPI "gpiod" package is an unrelated ctypes wrapper with a different API.
+# Build from libgpiod 1.6.3 source (matching the version on the OT-2) on Debian Stretch
+# (glibc 2.24). The resulting .so links against libgpiod.so.2 which is present on the OT-2.
+FROM grpc-builder AS gpiod-builder
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends autoconf automake libtool pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+RUN wget -q https://mirrors.edge.kernel.org/pub/software/libs/libgpiod/libgpiod-1.6.3.tar.gz && \
+    tar xzf libgpiod-1.6.3.tar.gz && \
+    cd libgpiod-1.6.3 && \
+    ./autogen.sh && \
+    ./configure --prefix=/usr/local --enable-shared --disable-static && \
+    make -j$(nproc) && \
+    make install && \
+    echo /usr/local/lib > /etc/ld.so.conf.d/local.conf && ldconfig && \
+    cd bindings/python && \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
+    _PYTHON_HOST_PLATFORM=linux-armv7l \
+    /usr/local/bin/pip3 wheel . --no-deps --wheel-dir=/gpiod-output/ && \
+    cd / && rm -rf libgpiod-1.6.3*
+
+
+# Stage 3: Compile numpy for armv7l on Debian Stretch (glibc 2.24).
 # Must use the same Stretch base as grpc-builder: building on Bookworm (glibc 2.36)
 # produces a wheel that requires GLIBC_2.34+, which the OT-2 (glibc 2.25) does not have.
 # Reuses the custom Python 3.10 + OpenSSL already built in Stage 1.
@@ -88,33 +112,24 @@ COPY config/ config/
 # uv pip compile resolves the full transitive dep tree from these top-level inputs:
 #   - unitelabs-cdk: our SiLA framework (pulls in unitelabs-sila → grpcio → six)
 #   - opentrons==8.8.1: the OT-2 driver library
-#   - numpy<1.25: pinned range; no armv7l wheel on PyPI, compiled in numpy-builder stage
-#   - gpiod>=1.5.0,<2.0: GPIO bindings required by opentrons but not declared as a pip
-#     dep (it ships as a system .so on the OT-2). PyPI gpiod 1.5.x is pure Python
-#     (ctypes-based) and calls into libgpiod.so.2 which is present on the OT-2.
+#   - numpy<1.25: no armv7l wheel on PyPI; compiled in numpy-builder stage
 #
-# Three overrides are required:
-#   - jsonschema>=4.25: opentrons==8.8.1 declares jsonschema<4.18 but unitelabs-sila
-#     requires jsonschema~=4.25; override mirrors pyproject.toml [tool.uv].override-dependencies
-#   - grpcio==1.46.3: no pre-built armv7l wheel exists on PyPI so uv would otherwise
-#     resolve to the latest grpcio (1.70+), whose metadata omits the six dependency.
-#     Pinning to 1.46.3 (our custom-compiled version) ensures uv captures six>=1.5.2
-#     as a required dep. grpcio itself is excluded from the download below and replaced
-#     by the wheel compiled from source in the grpc-builder stage.
-#   - gpiod==1.5.4: pins to the latest 1.x release; the OT-2 ships gpiod 1.6.3 (not
-#     on PyPI) built from libgpiod source, but the ctypes-based 1.5.4 from PyPI uses
-#     the same API and calls the same libgpiod.so.2 symbols.
-#
-# After resolution, numpy and grpcio are excluded from the pip download because neither
-# has an armv7l wheel on PyPI; both are provided by their dedicated builder stages.
+# Packages excluded from pip download (no usable armv7l wheel on PyPI; each has a
+# dedicated builder stage that compiles from source on Debian Stretch, glibc 2.24):
+#   - grpcio==1.46.3: overridden to ensure six>=1.5.2 is captured as a transitive dep
+#     (latest grpcio on PyPI dropped six from its declared deps)
+#   - numpy: compiled without BLAS/LAPACK; libopenblas is absent on the OT-2
+#   - gpiod: opentrons undeclared dep; PyPI "gpiod" is an unrelated ctypes wrapper with
+#     a different API (lowercase vs PascalCase); official libgpiod 1.x bindings built
+#     from source in gpiod-builder stage
 # pip downloads the remaining pinned packages with --no-deps (no re-resolution).
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
-    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\ngpiod>=1.5.0,<2.0\n' > /tmp/in.txt && \
-    printf 'jsonschema>=4.25\ngrpcio==1.46.3\ngpiod==1.5.4\n' > /tmp/overrides.txt && \
+    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\n' > /tmp/in.txt && \
+    printf 'jsonschema>=4.25\ngrpcio==1.46.3\n' > /tmp/overrides.txt && \
     uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
-    grep -v '^numpy\|^grpcio' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    grep -v '^numpy\|^grpcio\|^gpiod' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 310 --implementation cp --abi cp310 \
@@ -122,3 +137,4 @@ RUN python -m build --wheel && \
 
 COPY --from=numpy-builder /numpy-output/numpy-*.whl /output/
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
+COPY --from=gpiod-builder /gpiod-output/gpiod-*.whl /output/
