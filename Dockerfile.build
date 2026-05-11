@@ -85,12 +85,15 @@ COPY config/ config/
 
 # Dependency resolution strategy:
 #
-# uv pip compile resolves the full transitive dep tree from three top-level inputs:
+# uv pip compile resolves the full transitive dep tree from these top-level inputs:
 #   - unitelabs-cdk: our SiLA framework (pulls in unitelabs-sila → grpcio → six)
 #   - opentrons==8.8.1: the OT-2 driver library
 #   - numpy<1.25: pinned range; no armv7l wheel on PyPI, compiled in numpy-builder stage
+#   - gpiod>=1.5.0,<2.0: GPIO bindings required by opentrons but not declared as a pip
+#     dep (it ships as a system .so on the OT-2). PyPI gpiod 1.5.x is pure Python
+#     (ctypes-based) and calls into libgpiod.so.2 which is present on the OT-2.
 #
-# Two overrides are required:
+# Three overrides are required:
 #   - jsonschema>=4.25: opentrons==8.8.1 declares jsonschema<4.18 but unitelabs-sila
 #     requires jsonschema~=4.25; override mirrors pyproject.toml [tool.uv].override-dependencies
 #   - grpcio==1.46.3: no pre-built armv7l wheel exists on PyPI so uv would otherwise
@@ -98,6 +101,9 @@ COPY config/ config/
 #     Pinning to 1.46.3 (our custom-compiled version) ensures uv captures six>=1.5.2
 #     as a required dep. grpcio itself is excluded from the download below and replaced
 #     by the wheel compiled from source in the grpc-builder stage.
+#   - gpiod==1.5.4: pins to the latest 1.x release; the OT-2 ships gpiod 1.6.3 (not
+#     on PyPI) built from libgpiod source, but the ctypes-based 1.5.4 from PyPI uses
+#     the same API and calls the same libgpiod.so.2 symbols.
 #
 # After resolution, numpy and grpcio are excluded from the pip download because neither
 # has an armv7l wheel on PyPI; both are provided by their dedicated builder stages.
@@ -105,8 +111,8 @@ COPY config/ config/
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
-    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\n' > /tmp/in.txt && \
-    printf 'jsonschema>=4.25\ngrpcio==1.46.3\n' > /tmp/overrides.txt && \
+    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\ngpiod>=1.5.0,<2.0\n' > /tmp/in.txt && \
+    printf 'jsonschema>=4.25\ngrpcio==1.46.3\ngpiod==1.5.4\n' > /tmp/overrides.txt && \
     uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
     grep -v '^numpy\|^grpcio' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
