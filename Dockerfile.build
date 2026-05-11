@@ -57,18 +57,20 @@ RUN wget -q -O /tmp/grpcio-1.46.3.tar.gz \
     rm -rf /tmp/grpcio-1.46.3 /tmp/grpcio-1.46.3.tar.gz
 
 
-# Stage 2: Compile numpy for armv7l — no prebuilt wheel exists on PyPI for this platform.
-# Compiled without OpenBLAS (NPY_BLAS_ORDER="" NPY_LAPACK_ORDER="") so the wheel has no
-# runtime dependency on libopenblas.so, which is not present on the OT-2. We only use
-# numpy for array operations in robot control, not linear algebra, so this is fine.
-FROM arm32v7/python:3.10-slim-bookworm AS numpy-builder
+# Stage 2: Compile numpy for armv7l on Debian Stretch (glibc 2.24).
+# Must use the same Stretch base as grpc-builder: building on Bookworm (glibc 2.36)
+# produces a wheel that requires GLIBC_2.34+, which the OT-2 (glibc 2.25) does not have.
+# Reuses the custom Python 3.10 + OpenSSL already built in Stage 1.
+# Compiled without BLAS/LAPACK (NPY_BLAS_ORDER="" NPY_LAPACK_ORDER="") — no libopenblas
+# runtime dep, which is also absent on the OT-2. Only array ops are needed for robot control.
+FROM grpc-builder AS numpy-builder
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential gfortran pkg-config && \
+    apt-get install -y --no-install-recommends gfortran && \
     rm -rf /var/lib/apt/lists/*
 # _PYTHON_HOST_PLATFORM: force armv7l tag — uname -m returns aarch64 in arm32v7 on ARM64.
 RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
     NPY_BLAS_ORDER="" NPY_LAPACK_ORDER="" \
-    pip wheel "numpy>=1.20,<1.25" --no-deps --wheel-dir=/numpy-output/
+    /usr/local/bin/pip3 wheel "numpy>=1.20,<1.25" --no-deps --wheel-dir=/numpy-output/
 
 
 # Stage 3: Build our package and download remaining deps
