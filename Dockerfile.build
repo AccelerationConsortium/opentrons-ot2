@@ -63,19 +63,24 @@ RUN wget -q -O /tmp/grpcio-1.46.3.tar.gz \
 # Build from libgpiod 1.6.3 source (matching the version on the OT-2) on Debian Stretch
 # (glibc 2.24). The resulting .so links against libgpiod.so.2 which is present on the OT-2.
 FROM grpc-builder AS gpiod-builder
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends autoconf automake libtool pkg-config && \
-    rm -rf /var/lib/apt/lists/*
+# The tarball includes a pre-generated configure script — ./autogen.sh is not needed.
+# bindings/python/ has no setup.py (uses autotools); we write a minimal one that compiles
+# gpiodmodule.c against the installed libgpiod C library.
 RUN wget -q https://mirrors.edge.kernel.org/pub/software/libs/libgpiod/libgpiod-1.6.3.tar.gz && \
     tar xzf libgpiod-1.6.3.tar.gz && \
     cd libgpiod-1.6.3 && \
-    ./autogen.sh && \
     ./configure --prefix=/usr/local --enable-shared --disable-static && \
     make -j$(nproc) && \
     make install && \
     echo /usr/local/lib > /etc/ld.so.conf.d/local.conf && ldconfig && \
     cd bindings/python && \
-    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
+    printf '%s\n' \
+        'from setuptools import setup, Extension' \
+        'setup(name="gpiod", version="1.6.3", ext_modules=[Extension(' \
+        '    "gpiod", sources=["gpiodmodule.c"],' \
+        '    libraries=["gpiod"], library_dirs=["/usr/local/lib"],' \
+        '    include_dirs=["/usr/local/include"])])' \
+        > setup.py && \
     _PYTHON_HOST_PLATFORM=linux-armv7l \
     /usr/local/bin/pip3 wheel . --no-deps --wheel-dir=/gpiod-output/ && \
     cd / && rm -rf libgpiod-1.6.3*
