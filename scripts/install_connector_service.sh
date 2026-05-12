@@ -14,9 +14,11 @@ ssh "root@${HOST}" '
 set -e
 mount -o remount,rw /
 
-echo "Disabling opentrons-robot-server..."
-systemctl disable opentrons-robot-server || true
-systemctl stop opentrons-robot-server || true
+echo "Disabling opentrons services that hold GPIO lines..."
+for svc in opentrons-robot-server opentrons-status-leds opentrons-gpio-setup; do
+    systemctl disable "$svc" || true
+    systemctl stop "$svc" || true
+done
 
 echo "Installing sila2-connector service..."
 cat > /etc/systemd/system/sila2-connector.service << EOF
