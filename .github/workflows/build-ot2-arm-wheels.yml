@@ -30,6 +30,19 @@ jobs:
           platforms: linux/arm/v7
           load: true
           tags: ot2-wheel-builder-py310
+          target: builder
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build connector executable
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.build
+          platforms: linux/arm/v7
+          load: true
+          tags: ot2-exe-builder
+          target: pyinstaller-builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -40,11 +53,27 @@ jobs:
           docker rm $id
           ls -la dist_arm/
 
+      - name: Extract connector binary
+        run: |
+          mkdir -p dist_connector
+          id=$(docker create ot2-exe-builder)
+          docker cp $id:/exe-output/connector dist_connector/connector
+          docker rm $id
+          cp config/ot2_config.json dist_connector/ot2_config.json
+          ls -la dist_connector/
+
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
           name: ot2-arm-wheels-py310
           path: dist_arm/
+          retention-days: 28
+
+      - name: Upload connector artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ot2-connector-arm
+          path: dist_connector/
           retention-days: 28
 
   # New OT-2: Python 3.12, Buildroot, glibc 2.40.

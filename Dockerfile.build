@@ -141,3 +141,54 @@ RUN python -m build --wheel && \
 COPY --from=numpy-builder /numpy-output/numpy-*.whl /output/
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
 COPY --from=gpiod-builder /gpiod-output/gpiod-*.whl /output/
+
+
+# Stage 5: Build single self-contained connector binary using PyInstaller.
+# Based on gpiod-builder: Stretch + Python 3.10 + libgpiod.so.2 at /usr/local/lib.
+# Bundles every Python package, every C extension, and libgpiod.so.2.
+# The only external dep at runtime is glibc (OS ABI; built on Stretch glibc 2.24 → OT-2 glibc 2.25).
+FROM gpiod-builder AS pyinstaller-builder
+
+# All wheels (pure-Python + C extensions) come from the builder stage's /output.
+COPY --from=builder /output/ /wheels/
+
+# Install all wheels into the Stretch Python 3.10 environment.
+# --no-deps: every required package is already in /wheels/; no PyPI lookups needed.
+RUN /usr/local/bin/pip3 install --no-deps /wheels/*.whl
+
+# Build the PyInstaller bootloader from source for armv7l on Stretch (glibc 2.24).
+# PyInstaller ships pre-built bootloaders for x86/x86_64/aarch64 only — not armv7l.
+# The bootloader is injected into the output binary and must match the target glibc.
+# build-essential and zlib1g-dev are already present from the grpc-builder stage.
+RUN /usr/local/bin/pip3 install pyinstaller-hooks-contrib && \
+    wget -q https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v5.13.2.tar.gz && \
+    tar xzf v5.13.2.tar.gz && \
+    cd pyinstaller-5.13.2/bootloader && \
+    /usr/local/bin/python3 ./waf all && \
+    cd ../.. && \
+    /usr/local/bin/pip3 install ./pyinstaller-5.13.2/ && \
+    rm -rf pyinstaller-5.13.2 v5.13.2.tar.gz
+
+# Smoke-test imports before PyInstaller runs — fails fast if any package is missing.
+RUN /usr/local/bin/python3 -c "import grpc, gpiod, opentrons, numpy, unitelabs.opentrons_ot2; print('imports OK: grpc=%s numpy=%s' % (grpc.__version__, numpy.__version__))"
+
+# Build the connector binary.
+# Entry point: /usr/local/bin/connector — the console_scripts shim written by pip when
+# unitelabs-cdk is installed.
+# --add-binary bundles libgpiod.so.2 (compiled on Stretch in gpiod-builder) so the gpiod
+# extension resolves it from inside the bundle via PyInstaller's LD_LIBRARY_PATH, not the system.
+# libstdc++.so.6, libgcc_s.so.1, and libpython3.10.so.1.0 are auto-collected via ldd.
+RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
+    /usr/local/bin/pyinstaller \
+        --onefile \
+        --name connector \
+        --collect-all opentrons \
+        --collect-all opentrons_shared_data \
+        --collect-all unitelabs \
+        --hidden-import grpc._cython.cygrpc \
+        --add-binary '/usr/local/lib/libgpiod.so.2:.' \
+        --distpath /exe-output/ \
+        /usr/local/bin/connector
+
+# Smoke-test the frozen binary itself — catches missing hidden imports and data files.
+RUN /exe-output/connector --help
