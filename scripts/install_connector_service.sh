@@ -27,7 +27,7 @@ Wants=opentrons-init-connections.service
 
 [Service]
 Type=simple
-ExecStart=/bin/sh /data/start_connector.sh
+ExecStart=/var/sila2_ot2/bin/connector start --app unitelabs.opentrons_ot2:create_app --config-path /var/sila2_ot2/config.json
 Restart=on-failure
 RestartSec=5
 
