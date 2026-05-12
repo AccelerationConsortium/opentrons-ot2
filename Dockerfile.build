@@ -185,6 +185,7 @@ RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
         --collect-all opentrons \
         --collect-all opentrons_shared_data \
         --collect-all unitelabs \
+        --collect-all zeroconf \
         --hidden-import grpc._cython.cygrpc \
         --add-binary '/usr/local/lib/libgpiod.so.2:.' \
         --distpath /exe-output/ \
