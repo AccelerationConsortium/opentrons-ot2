@@ -24,6 +24,7 @@ Example usage:
 from ._types import RPM, Temperature
 from .heater_shaker import HeaterShakerController
 from .magnetic_module import MagneticModuleController
+from .modules import scan_module_ports
 from .motion import OT2MotionController
 from .temperature_module import TemperatureModuleController
 from .thermocycler import ThermocyclerController
@@ -36,4 +37,5 @@ __all__ = [
     "Temperature",
     "TemperatureModuleController",
     "ThermocyclerController",
+    "scan_module_ports",
 ]
