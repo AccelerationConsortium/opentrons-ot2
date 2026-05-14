@@ -225,6 +225,7 @@ key.pem
 *.tar.bz2
 dist_arm/
 dist_arm_new/
+dist_connector/connector
 
 # Configuration default paths
 config.json
