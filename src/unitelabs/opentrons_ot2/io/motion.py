@@ -222,6 +222,30 @@ class OT2MotionController:
         """
         return await self._driver.probe_axis(axis=axis, probing_distance=distance)
 
+    async def aspirate(
+        self,
+        axis: str,
+        volume_ul: float,
+        ul_per_mm: float,
+        flow_rate_ul_s: float,
+    ) -> None:
+        """Move plunger axis down by volume_ul to draw liquid."""
+        distance_mm = volume_ul / ul_per_mm
+        speed_mm_s = flow_rate_ul_s / ul_per_mm
+        await self.move_relative({axis: -distance_mm}, speed=speed_mm_s)
+
+    async def dispense(
+        self,
+        axis: str,
+        volume_ul: float,
+        ul_per_mm: float,
+        flow_rate_ul_s: float,
+    ) -> None:
+        """Move plunger axis up by volume_ul to expel liquid."""
+        distance_mm = volume_ul / ul_per_mm
+        speed_mm_s = flow_rate_ul_s / ul_per_mm
+        await self.move_relative({axis: +distance_mm}, speed=speed_mm_s)
+
     async def stop(self) -> None:
         """Emergency stop - halt all motion."""
         await self._driver.hard_halt()

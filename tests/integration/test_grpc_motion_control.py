@@ -22,7 +22,7 @@ import pytest_asyncio
 
 from unitelabs.cdk import SiLAServerConfig
 from unitelabs.opentrons_ot2 import OpentronsOt2Config, create_app
-from unitelabs.opentrons_ot2.features.motion_control import AxisPosition, HomedFlags, HomeResult
+from unitelabs.opentrons_ot2.features.motion_control import Axis, AxisPosition, HomedFlags, HomeResult, Mount
 
 _PKG = "sila2.ca.accelerationconsortium.robots.motioncontrolfeature.v1"
 _SERVICE = f"{_PKG}.MotionControlFeature"
@@ -67,22 +67,23 @@ class _MotionClient:
         resp_bytes = await stub(b"")
         return await self._pb.decode(f"{_PKG}.{name}_Responses", resp_bytes)
 
-    async def home(self, axes: str = "XYZABC") -> HomeResult:
+    async def home(self, axes: list[Axis] | None = None) -> HomeResult:
         """Home axes and return the HomeResult dataclass."""
-        return self._single(await self._call("Home", {"axes": axes}), HomeResult)
+        selected = axes if axes is not None else list(Axis)
+        return self._single(await self._call("Home", {"axes": selected}), HomeResult)
 
     async def get_position(self) -> AxisPosition:
         """Return the current AxisPosition dataclass."""
         return self._single(await self._call("GetPosition"), AxisPosition)
 
-    async def move_axis(self, axis: str, position: float) -> AxisPosition:
+    async def move_axis(self, axis: Axis, position: float) -> AxisPosition:
         """Move a single axis; returns AxisPosition dataclass."""
         return self._single(
             await self._call("MoveAxis", {"axis": axis, "position": position, "speed": 0.0}),
             AxisPosition,
         )
 
-    async def move_relative_axis(self, axis: str, delta: float) -> AxisPosition:
+    async def move_relative_axis(self, axis: Axis, delta: float) -> AxisPosition:
         """Move a single axis relative; returns AxisPosition dataclass."""
         return self._single(
             await self._call("MoveRelativeAxis", {"axis": axis, "delta": delta, "speed": 0.0}),
@@ -96,6 +97,26 @@ class _MotionClient:
     async def reset_from_error(self) -> HomedFlags:
         """Clear alarm state; returns HomedFlags dataclass."""
         return self._single(await self._call("ResetFromError"), HomedFlags)
+
+    async def aspirate(self, mount: Mount, volume_ul: float, ul_per_mm: float, flow_rate_ul_s: float) -> AxisPosition:
+        """Aspirate volume_ul from mount; returns AxisPosition."""
+        return self._single(
+            await self._call(
+                "Aspirate",
+                {"mount": mount, "volume_ul": volume_ul, "ul_per_mm": ul_per_mm, "flow_rate_ul_s": flow_rate_ul_s},
+            ),
+            AxisPosition,
+        )
+
+    async def dispense(self, mount: Mount, volume_ul: float, ul_per_mm: float, flow_rate_ul_s: float) -> AxisPosition:
+        """Dispense volume_ul from mount; returns AxisPosition."""
+        return self._single(
+            await self._call(
+                "Dispense",
+                {"mount": mount, "volume_ul": volume_ul, "ul_per_mm": ul_per_mm, "flow_rate_ul_s": flow_rate_ul_s},
+            ),
+            AxisPosition,
+        )
 
     async def get_is_simulating(self) -> bool:
         """Return the is-simulating boolean."""
@@ -178,7 +199,7 @@ async def test_home_sets_all_homed_flags(client: _MotionClient) -> None:
 @pytest.mark.asyncio
 async def test_home_subset_only_sets_requested_flags(client: _MotionClient) -> None:
     """Homing only BC leaves X, Y, Z, A flags False."""
-    await client.home(axes="BC")
+    await client.home(axes=[Axis.B, Axis.C])
     flags = await client.get_homed_flags()
     assert flags.b is True
     assert flags.c is True
@@ -202,7 +223,7 @@ async def test_get_position_reflects_home(client: _MotionClient) -> None:
 async def test_move_axis_changes_target_axis(client: _MotionClient) -> None:
     """MoveAxis X to 75 mm produces X≈75 in the returned position."""
     await client.home()
-    result = await client.move_axis(axis="X", position=75.0)
+    result = await client.move_axis(axis=Axis.X, position=75.0)
     assert result.x == pytest.approx(75.0)
 
 
@@ -210,7 +231,7 @@ async def test_move_axis_changes_target_axis(client: _MotionClient) -> None:
 async def test_move_axis_does_not_change_other_axes(client: _MotionClient) -> None:
     """MoveAxis X leaves Y at its homed value."""
     await client.home()
-    result = await client.move_axis(axis="X", position=75.0)
+    result = await client.move_axis(axis=Axis.X, position=75.0)
     assert result.y == pytest.approx(HOMED_POSITION.y)
 
 
@@ -218,8 +239,8 @@ async def test_move_axis_does_not_change_other_axes(client: _MotionClient) -> No
 async def test_move_relative_axis_accumulates(client: _MotionClient) -> None:
     """Two MoveRelativeAxis Y -20 mm moves produce Y = homed_Y - 40 mm."""
     await client.home()
-    await client.move_relative_axis(axis="Y", delta=-20.0)
-    result = await client.move_relative_axis(axis="Y", delta=-20.0)
+    await client.move_relative_axis(axis=Axis.Y, delta=-20.0)
+    result = await client.move_relative_axis(axis=Axis.Y, delta=-20.0)
     assert result.y == pytest.approx(HOMED_POSITION.y - 40.0)
 
 
@@ -237,3 +258,54 @@ async def test_reset_from_error_clears_homed_flags(client: _MotionClient) -> Non
 
     flags_after = await client.get_homed_flags()
     assert not any([flags_after.x, flags_after.y, flags_after.z, flags_after.a, flags_after.b, flags_after.c])
+
+
+# ── Aspirate / Dispense ───────────────────────────────────────────────────────
+
+# ul_per_mm of 1.0 makes the math trivial: volume_ul == distance_mm.
+_UL_PER_MM = 1.0
+_FLOW_RATE = 10.0  # µL/s
+
+
+@pytest.mark.asyncio
+async def test_aspirate_decreases_plunger_position(client: _MotionClient) -> None:
+    """Aspirate moves the left plunger (B) down by volume_ul / ul_per_mm."""
+    await client.home()
+    pos_before = await client.get_position()
+    volume = 5.0
+    pos_after = await client.aspirate(Mount.LEFT, volume, _UL_PER_MM, _FLOW_RATE)
+    assert pos_after.b == pytest.approx(pos_before.b - volume / _UL_PER_MM)
+
+
+@pytest.mark.asyncio
+async def test_dispense_restores_plunger_position(client: _MotionClient) -> None:
+    """Dispense after aspirate returns the left plunger (B) to its original position."""
+    await client.home()
+    pos_before = await client.get_position()
+    volume = 5.0
+    await client.aspirate(Mount.LEFT, volume, _UL_PER_MM, _FLOW_RATE)
+    pos_after = await client.dispense(Mount.LEFT, volume, _UL_PER_MM, _FLOW_RATE)
+    assert pos_after.b == pytest.approx(pos_before.b)
+
+
+@pytest.mark.asyncio
+async def test_aspirate_right_mount_moves_c_axis(client: _MotionClient) -> None:
+    """Aspirate on the right mount moves axis C, not B."""
+    await client.home()
+    pos_before = await client.get_position()
+    volume = 3.0
+    pos_after = await client.aspirate(Mount.RIGHT, volume, _UL_PER_MM, _FLOW_RATE)
+    assert pos_after.c == pytest.approx(pos_before.c - volume / _UL_PER_MM)
+    assert pos_after.b == pytest.approx(pos_before.b)
+
+
+@pytest.mark.asyncio
+async def test_aspirate_does_not_move_gantry(client: _MotionClient) -> None:
+    """Aspirate leaves X, Y, Z, A axes unchanged."""
+    await client.home()
+    pos_before = await client.get_position()
+    pos_after = await client.aspirate(Mount.LEFT, 5.0, _UL_PER_MM, _FLOW_RATE)
+    assert pos_after.x == pytest.approx(pos_before.x)
+    assert pos_after.y == pytest.approx(pos_before.y)
+    assert pos_after.z == pytest.approx(pos_before.z)
+    assert pos_after.a == pytest.approx(pos_before.a)

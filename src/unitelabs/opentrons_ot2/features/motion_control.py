@@ -4,6 +4,7 @@ SiLA2 feature for OT-2 motion control.
 Uses the OT2MotionController wrapper around Opentrons SmoothieDriver.
 """
 
+import enum
 from dataclasses import dataclass
 
 from opentrons.drivers.smoothie_drivers.errors import TipProbeError
@@ -53,8 +54,22 @@ class ButtonLight:
     blue: bool
 
 
-# Valid axes
-AXES = "XYZABC"
+class Axis(enum.IntEnum):
+    """Robot axis. Member names map directly to Smoothie axis letters."""
+
+    X = 0
+    Y = 1
+    Z = 2
+    A = 3
+    B = 4
+    C = 5
+
+
+class Mount(enum.IntEnum):
+    """Pipette mount position. LEFT controls axis B, RIGHT controls axis C."""
+
+    LEFT = 0
+    RIGHT = 1
 
 
 def _dict_to_position(pos: dict[str, float]) -> AxisPosition:
@@ -96,7 +111,7 @@ class MotionControlFeature(sila.Feature):
         self._controller = controller
 
     @sila.UnobservableCommand()
-    async def home(self, axes: str = "XYZABC") -> HomeResult:
+    async def home(self, axes: list[Axis]) -> HomeResult:
         """
         Home the specified axes.
 
@@ -104,26 +119,14 @@ class MotionControlFeature(sila.Feature):
         unstick moves for plunger axes, and proper X/Y sequencing.
 
         Args:
-            axes: String of axes to home (e.g., "XY", "ZABC", "XYZABC").
-                  Default homes all axes. Valid axes: X, Y, Z, A, B, C.
+            axes: Axes to home. Pass all six to home the full robot.
 
         Returns:
             HomeResult with the homed axes and final position.
         """
-        axes = axes.upper() or AXES
-        valid_axes = set(AXES)
-        requested = set(axes)
-
-        if not requested.issubset(valid_axes):
-            invalid = requested - valid_axes
-            raise ValueError(f"Invalid axes: {invalid}. Valid axes are: {valid_axes}")
-
-        position = await self._controller.home(axes=axes)
-
-        return HomeResult(
-            homed_axes=axes,
-            position=_dict_to_position(position),
-        )
+        axes_str = "".join(a.name for a in axes)
+        position = await self._controller.home(axes=axes_str)
+        return HomeResult(homed_axes=axes_str, position=_dict_to_position(position))
 
     @sila.UnobservableCommand()
     async def move_to(self, position: AxisPosition, speed: float = 0.0) -> AxisPosition:
@@ -154,50 +157,38 @@ class MotionControlFeature(sila.Feature):
         return _dict_to_position(pos)
 
     @sila.UnobservableCommand()
-    async def move_axis(self, axis: str, position: float, speed: float = 0.0) -> AxisPosition:
+    async def move_axis(self, axis: Axis, position: float, speed: float = 0.0) -> AxisPosition:
         """
         Move a single axis to an absolute position.
 
         Args:
-            axis: Axis to move (X, Y, Z, A, B, or C).
+            axis: Axis to move.
             position: Target position in mm.
             speed: Movement speed in mm/sec (0 = default speed).
 
         Returns:
             The actual position after the move.
         """
-        axis = axis.upper()
-        if axis not in AXES:
-            raise ValueError(f"Invalid axis: {axis}. Valid axes are: {AXES}")
-
-        target = {axis: position}
         spd = speed if speed > 0 else None
-        await self._controller.move(target=target, speed=spd)
-        pos = await self._controller.get_position()
-        return _dict_to_position(pos)
+        await self._controller.move(target={axis.name: position}, speed=spd)
+        return _dict_to_position(await self._controller.get_position())
 
     @sila.UnobservableCommand()
-    async def move_relative_axis(self, axis: str, delta: float, speed: float = 0.0) -> AxisPosition:
+    async def move_relative_axis(self, axis: Axis, delta: float, speed: float = 0.0) -> AxisPosition:
         """
         Move a single axis relative to current position.
 
         Args:
-            axis: Axis to move (X, Y, Z, A, B, or C).
+            axis: Axis to move.
             delta: Distance to move in mm.
             speed: Movement speed in mm/sec (0 = default speed).
 
         Returns:
             The actual position after the move.
         """
-        axis = axis.upper()
-        if axis not in AXES:
-            raise ValueError(f"Invalid axis: {axis}. Valid axes are: {AXES}")
-
-        deltas = {axis: delta}
         spd = speed if speed > 0 else None
-        await self._controller.move_relative(deltas=deltas, speed=spd)
-        pos = await self._controller.get_position()
-        return _dict_to_position(pos)
+        await self._controller.move_relative(deltas={axis.name: delta}, speed=spd)
+        return _dict_to_position(await self._controller.get_position())
 
     @sila.UnobservableCommand()
     async def get_position(self) -> AxisPosition:
@@ -210,23 +201,73 @@ class MotionControlFeature(sila.Feature):
         position = await self._controller.get_position()
         return _dict_to_position(position)
 
+    @sila.UnobservableCommand()
+    async def aspirate(
+        self,
+        mount: Mount,
+        volume_ul: float,
+        ul_per_mm: float,
+        flow_rate_ul_s: float,
+    ) -> AxisPosition:
+        """
+        Draw liquid by moving the plunger axis down.
+
+        The connector exposes this primitive move only — liquid-class logic
+        (blowout, mix, touch-tip, sequence ordering) stays on the client.
+
+        Args:
+            mount: Pipette mount (left = axis B, right = axis C).
+            volume_ul: Volume to aspirate in µL.
+            ul_per_mm: Plunger conversion factor for the attached pipette (µL/mm).
+            flow_rate_ul_s: Aspiration flow rate in µL/s.
+
+        Returns:
+            Axis positions after the move.
+        """
+        axis = "B" if mount == Mount.LEFT else "C"
+        await self._controller.aspirate(axis, volume_ul, ul_per_mm, flow_rate_ul_s)
+        return _dict_to_position(await self._controller.get_position())
+
+    @sila.UnobservableCommand()
+    async def dispense(
+        self,
+        mount: Mount,
+        volume_ul: float,
+        ul_per_mm: float,
+        flow_rate_ul_s: float,
+    ) -> AxisPosition:
+        """
+        Expel liquid by moving the plunger axis up.
+
+        The connector exposes this primitive move only — liquid-class logic
+        (blowout, mix, touch-tip, sequence ordering) stays on the client.
+
+        Args:
+            mount: Pipette mount (left = axis B, right = axis C).
+            volume_ul: Volume to dispense in µL.
+            ul_per_mm: Plunger conversion factor for the attached pipette (µL/mm).
+            flow_rate_ul_s: Dispense flow rate in µL/s.
+
+        Returns:
+            Axis positions after the move.
+        """
+        axis = "B" if mount == Mount.LEFT else "C"
+        await self._controller.dispense(axis, volume_ul, ul_per_mm, flow_rate_ul_s)
+        return _dict_to_position(await self._controller.get_position())
+
     @sila.UnobservableCommand(errors=[TipProbeError])
-    async def probe(self, axis: str, distance: float) -> AxisPosition:
+    async def probe(self, axis: Axis, distance: float) -> AxisPosition:
         """
         Probe along an axis until contact.
 
         Args:
-            axis: Single axis to probe (X, Y, Z, A, B, or C).
+            axis: Axis to probe.
             distance: Maximum probing distance in mm.
 
         Returns:
             Position where probe was triggered.
         """
-        axis = axis.upper()
-        if axis not in AXES:
-            raise ValueError(f"Invalid axis: {axis}. Valid axes are: {AXES}")
-
-        position = await self._controller.probe_axis(axis=axis, distance=distance)
+        position = await self._controller.probe_axis(axis=axis.name, distance=distance)
         return _dict_to_position(position)
 
     @sila.UnobservableCommand()
