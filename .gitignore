@@ -231,3 +231,6 @@ dist_connector/connector
 config.json
 config.yaml
 config.yml
+
+# Local planning notes
+plan/
