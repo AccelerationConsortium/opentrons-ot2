@@ -54,34 +54,27 @@ class ButtonLight:
     blue: bool
 
 
-class Axis(enum.IntEnum):
-    """Robot axis. Member names map directly to Smoothie axis letters."""
+class Axis(enum.Enum):
+    """Robot axis. Value is the Smoothie axis letter."""
 
-    X = 0
-    Y = 1
-    Z = 2
-    A = 3
-    B = 4
-    C = 5
+    X = "X"
+    Y = "Y"
+    Z = "Z"
+    A = "A"
+    B = "B"
+    C = "C"
 
 
-class Mount(enum.IntEnum):
-    """Pipette mount position. LEFT controls axis B, RIGHT controls axis C."""
+class Mount(enum.Enum):
+    """Pipette mount. Value is the plunger Axis for that mount."""
 
-    LEFT = 0
-    RIGHT = 1
+    LEFT = Axis.B
+    RIGHT = Axis.C
 
 
 def _dict_to_position(pos: dict[str, float]) -> AxisPosition:
-    """Convert position dict to AxisPosition dataclass."""
-    return AxisPosition(
-        x=pos.get("X", 0.0),
-        y=pos.get("Y", 0.0),
-        z=pos.get("Z", 0.0),
-        a=pos.get("A", 0.0),
-        b=pos.get("B", 0.0),
-        c=pos.get("C", 0.0),
-    )
+    """Convert Smoothie position dict (string-keyed) to AxisPosition."""
+    return AxisPosition(**{ax.value.lower(): pos.get(ax.value, 0.0) for ax in Axis})
 
 
 class MotionControlFeature(sila.Feature):
@@ -124,7 +117,7 @@ class MotionControlFeature(sila.Feature):
         Returns:
             HomeResult with the homed axes and final position.
         """
-        axes_str = "".join(a.name for a in axes)
+        axes_str = "".join(a.value for a in axes)
         position = await self._controller.home(axes=axes_str)
         return HomeResult(homed_axes=axes_str, position=_dict_to_position(position))
 
@@ -143,14 +136,7 @@ class MotionControlFeature(sila.Feature):
         Returns:
             The actual position after the move.
         """
-        target = {
-            "X": position.x,
-            "Y": position.y,
-            "Z": position.z,
-            "A": position.a,
-            "B": position.b,
-            "C": position.c,
-        }
+        target = {ax.value: getattr(position, ax.value.lower()) for ax in Axis}
         spd = speed if speed > 0 else None
         await self._controller.move(target=target, speed=spd)
         pos = await self._controller.get_position()
@@ -170,7 +156,7 @@ class MotionControlFeature(sila.Feature):
             The actual position after the move.
         """
         spd = speed if speed > 0 else None
-        await self._controller.move(target={axis.name: position}, speed=spd)
+        await self._controller.move(target={axis.value: position}, speed=spd)
         return _dict_to_position(await self._controller.get_position())
 
     @sila.UnobservableCommand()
@@ -187,7 +173,7 @@ class MotionControlFeature(sila.Feature):
             The actual position after the move.
         """
         spd = speed if speed > 0 else None
-        await self._controller.move_relative(deltas={axis.name: delta}, speed=spd)
+        await self._controller.move_relative(deltas={axis.value: delta}, speed=spd)
         return _dict_to_position(await self._controller.get_position())
 
     @sila.UnobservableCommand()
@@ -224,8 +210,8 @@ class MotionControlFeature(sila.Feature):
         Returns:
             Axis positions after the move.
         """
-        axis = "B" if mount == Mount.LEFT else "C"
-        await self._controller.aspirate(axis, volume_ul, ul_per_mm, flow_rate_ul_s)
+        axis = mount.value
+        await self._controller.aspirate(axis.value, volume_ul, ul_per_mm, flow_rate_ul_s)
         return _dict_to_position(await self._controller.get_position())
 
     @sila.UnobservableCommand()
@@ -251,8 +237,8 @@ class MotionControlFeature(sila.Feature):
         Returns:
             Axis positions after the move.
         """
-        axis = "B" if mount == Mount.LEFT else "C"
-        await self._controller.dispense(axis, volume_ul, ul_per_mm, flow_rate_ul_s)
+        axis = mount.value
+        await self._controller.dispense(axis.value, volume_ul, ul_per_mm, flow_rate_ul_s)
         return _dict_to_position(await self._controller.get_position())
 
     @sila.UnobservableCommand(errors=[TipProbeError])
@@ -267,7 +253,7 @@ class MotionControlFeature(sila.Feature):
         Returns:
             Position where probe was triggered.
         """
-        position = await self._controller.probe_axis(axis=axis.name, distance=distance)
+        position = await self._controller.probe_axis(axis=axis.value, distance=distance)
         return _dict_to_position(position)
 
     @sila.UnobservableCommand()
@@ -302,14 +288,7 @@ class MotionControlFeature(sila.Feature):
 
     def _build_homed_flags(self) -> HomedFlags:
         flags = self._controller.homed_flags
-        return HomedFlags(
-            x=flags.get("X", False),
-            y=flags.get("Y", False),
-            z=flags.get("Z", False),
-            a=flags.get("A", False),
-            b=flags.get("B", False),
-            c=flags.get("C", False),
-        )
+        return HomedFlags(**{ax.value.lower(): flags.get(ax.value, False) for ax in Axis})
 
     @sila.UnobservableProperty()
     def homed_flags(self) -> HomedFlags:
