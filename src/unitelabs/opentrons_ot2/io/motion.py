@@ -288,20 +288,20 @@ class OT2MotionController:
         result = await self._driver.read_pipette_id(mount)
         return result or ""
 
-    async def configure_mount(
-        self,
-        axis: str,
-        steps_per_mm: float,
-        home_position_mm: float,
-        max_travel_mm: float,
-        retract_mm: float,
-    ) -> None:
-        """Write steps/mm and motion limits for a pipette mount to the Smoothie."""
-        await self._driver.update_steps_per_mm({axis: steps_per_mm})
-        await self._driver.update_pipette_config(
-            axis,
-            {"home": home_position_mm, "max_travel": max_travel_mm, "retract": retract_mm},
-        )
+    # ============ Calibration ============
+
+    async def update_steps_per_mm(self, updates: dict[str, float]) -> None:
+        """Write steps/mm for one or more axes via M92."""
+        await self._driver.update_steps_per_mm(updates)
+
+    async def update_pipette_config(self, axis: str, data: dict[str, float]) -> None:
+        """
+        Write M365 pipette motion parameters for one axis.
+
+        Valid keys: "home" (M365.0), "max_travel" (M365.1),
+        "debounce" (M365.2, global), "retract" (M365.3).
+        """
+        await self._driver.update_pipette_config(axis, data)
 
     async def stop(self) -> None:
         """Emergency stop - halt all motion."""

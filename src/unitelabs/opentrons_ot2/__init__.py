@@ -6,6 +6,7 @@ from importlib.metadata import version
 from unitelabs.cdk import Connector, ConnectorBaseConfig, SiLAServerConfig
 
 from .features import (
+    CalibrationFeature,
     HeaterShakerFeature,
     MagneticModuleFeature,
     MotionControlFeature,
@@ -65,6 +66,7 @@ async def create_app(config: OpentronsOt2Config) -> collections.abc.AsyncGenerat
     app = Connector(config)
     app.register(MotionControlFeature(motion_controller))
     app.register(PipetteFeature(motion_controller))
+    app.register(CalibrationFeature(motion_controller))
 
     if not config.use_simulator:
         module_ports = scan_module_ports()

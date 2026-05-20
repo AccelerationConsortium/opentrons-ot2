@@ -11,6 +11,7 @@ import pytest
 
 from unitelabs.opentrons_ot2 import OpentronsOt2Config, create_app
 from unitelabs.opentrons_ot2.features import (
+    CalibrationFeature,
     HeaterShakerFeature,
     MagneticModuleFeature,
     MotionControlFeature,
@@ -61,11 +62,11 @@ async def _run_app(config: OpentronsOt2Config, module_ports: dict):
 
 
 @pytest.mark.asyncio
-async def test_simulate_registers_motion_and_pipette():
+async def test_simulate_registers_core_features():
     config = OpentronsOt2Config(use_simulator=True)
     async with _run_app(config, module_ports=_ALL_MODULE_PORTS) as (_, registered):
         types = [type(f) for f in registered]
-        assert types == [MotionControlFeature, PipetteFeature]
+        assert types == [MotionControlFeature, PipetteFeature, CalibrationFeature]
 
 
 @pytest.mark.asyncio
@@ -81,11 +82,11 @@ async def test_simulate_skips_module_scan(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_no_modules_registers_motion_and_pipette():
+async def test_no_modules_registers_core_features():
     config = OpentronsOt2Config(use_simulator=False)
     async with _run_app(config, module_ports={}) as (_, registered):
         types = [type(f) for f in registered]
-        assert types == [MotionControlFeature, PipetteFeature]
+        assert types == [MotionControlFeature, PipetteFeature, CalibrationFeature]
 
 
 # ── real hardware, individual modules ────────────────────────────────────────
@@ -107,8 +108,9 @@ async def test_single_module_registers_correct_feature(ports, expected_feature):
         types = [type(f) for f in registered]
         assert MotionControlFeature in types
         assert PipetteFeature in types
+        assert CalibrationFeature in types
         assert expected_feature in types
-        assert len(types) == 3
+        assert len(types) == 4
 
 
 @pytest.mark.asyncio
@@ -119,6 +121,7 @@ async def test_all_modules_registers_all_features():
         assert types == {
             MotionControlFeature,
             PipetteFeature,
+            CalibrationFeature,
             HeaterShakerFeature,
             ThermocyclerFeature,
             TemperatureModuleFeature,
