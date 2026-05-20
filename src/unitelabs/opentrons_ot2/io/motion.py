@@ -10,6 +10,7 @@ Uses:
 - opentrons.config.robot_configs for default configuration
 """
 
+import asyncio
 import logging
 
 # Import Opentrons driver components
@@ -80,6 +81,8 @@ class OT2MotionController:
         # init time, before any caller can mutate them via set_active_current etc.
         self._default_active_currents: dict[str, float] = dict(smoothie_driver._active_current_settings.now)
         self._default_dwelling_currents: dict[str, float] = dict(smoothie_driver._dwelling_current_settings.now)
+        # SmoothieDriver has a single serial connection — concurrent callers must not interleave.
+        self._lock = asyncio.Lock()
 
     @classmethod
     async def build(
@@ -163,7 +166,8 @@ class OT2MotionController:
         Returns:
             Dict of axis positions after homing.
         """
-        return await self._driver.home(axis=axes)
+        async with self._lock:
+            return await self._driver.home(axis=axes)
 
     async def move(
         self,
@@ -182,7 +186,8 @@ class OT2MotionController:
             target: Dict of axis -> position (e.g., {"X": 100.0, "Y": 50.0}).
             speed: Optional speed in mm/sec.
         """
-        await self._driver.move(target=target, speed=speed)
+        async with self._lock:
+            await self._driver.move(target=target, speed=speed)
 
     async def move_relative(
         self,
@@ -196,9 +201,10 @@ class OT2MotionController:
             deltas: Dict of axis -> delta (e.g., {"X": 10.0, "Z": -5.0}).
             speed: Optional speed in mm/sec.
         """
-        current = self.position
-        target = {ax: current.get(ax, 0) + delta for ax, delta in deltas.items()}
-        await self.move(target, speed=speed)
+        async with self._lock:
+            current = self.position
+            target = {ax: current.get(ax, 0) + delta for ax, delta in deltas.items()}
+            await self._driver.move(target=target, speed=speed)
 
     async def get_position(self) -> dict[str, float]:
         """
@@ -206,8 +212,9 @@ class OT2MotionController:
 
         Updates the internal cache and returns the position.
         """
-        await self._driver.update_position()
-        return self.position
+        async with self._lock:
+            await self._driver.update_position()
+            return self.position
 
     async def probe_axis(
         self,
@@ -224,7 +231,8 @@ class OT2MotionController:
         Returns:
             Position where probe was triggered.
         """
-        return await self._driver.probe_axis(axis=axis, probing_distance=distance)
+        async with self._lock:
+            return await self._driver.probe_axis(axis=axis, probing_distance=distance)
 
     async def aspirate(
         self,
@@ -236,7 +244,10 @@ class OT2MotionController:
         """Move plunger axis down by volume_ul to draw liquid."""
         distance_mm = volume_ul / ul_per_mm
         speed_mm_s = flow_rate_ul_s / ul_per_mm
-        await self.move_relative({axis: -distance_mm}, speed=speed_mm_s)
+        async with self._lock:
+            current = self.position
+            target = {axis: current.get(axis, 0) - distance_mm}
+            await self._driver.move(target=target, speed=speed_mm_s)
 
     async def dispense(
         self,
@@ -248,7 +259,10 @@ class OT2MotionController:
         """Move plunger axis up by volume_ul to expel liquid."""
         distance_mm = volume_ul / ul_per_mm
         speed_mm_s = flow_rate_ul_s / ul_per_mm
-        await self.move_relative({axis: +distance_mm}, speed=speed_mm_s)
+        async with self._lock:
+            current = self.position
+            target = {axis: current.get(axis, 0) + distance_mm}
+            await self._driver.move(target=target, speed=speed_mm_s)
 
     # ============ Motor Current ============
 
@@ -280,19 +294,22 @@ class OT2MotionController:
 
     async def read_pipette_model(self, mount: str) -> str:
         """Read the model string from the pipette EEPROM. Returns '' if no pipette attached."""
-        result = await self._driver.read_pipette_model(mount)
+        async with self._lock:
+            result = await self._driver.read_pipette_model(mount)
         return result or ""
 
     async def read_pipette_id(self, mount: str) -> str:
         """Read the unique ID from the pipette EEPROM. Returns '' if unreadable."""
-        result = await self._driver.read_pipette_id(mount)
+        async with self._lock:
+            result = await self._driver.read_pipette_id(mount)
         return result or ""
 
     # ============ Calibration ============
 
     async def update_steps_per_mm(self, updates: dict[str, float]) -> None:
         """Write steps/mm for one or more axes via M92."""
-        await self._driver.update_steps_per_mm(updates)
+        async with self._lock:
+            await self._driver.update_steps_per_mm(updates)
 
     async def update_pipette_config(self, axis: str, data: dict[str, float]) -> None:
         """
@@ -301,11 +318,13 @@ class OT2MotionController:
         Valid keys: "home" (M365.0), "max_travel" (M365.1),
         "debounce" (M365.2, global), "retract" (M365.3).
         """
-        await self._driver.update_pipette_config(axis, data)
+        async with self._lock:
+            await self._driver.update_pipette_config(axis, data)
 
     async def stop(self) -> None:
         """Emergency stop - halt all motion."""
-        await self._driver.hard_halt()
+        async with self._lock:
+            await self._driver.hard_halt()
 
     def resume(self) -> None:
         """Resume after pause."""
@@ -382,7 +401,8 @@ class OT2MotionController:
 
     async def get_firmware_version(self) -> str:
         """Get Smoothie firmware version."""
-        return await self._driver.get_fw_version()
+        async with self._lock:
+            return await self._driver.get_fw_version()
 
     # ============ Connection Management ============
 
@@ -402,11 +422,13 @@ class OT2MotionController:
 
     async def reset_from_error(self) -> None:
         """Clear alarm lock state (M999)."""
-        await self._driver._reset_from_error()
+        async with self._lock:
+            await self._driver._reset_from_error()
 
     async def smoothie_reset(self) -> None:
         """Full hardware GPIO reset of the Smoothie."""
-        await self._driver._smoothie_reset()
+        async with self._lock:
+            await self._driver._smoothie_reset()
 
     async def is_connected(self) -> bool:
         """Check if connected to Smoothie."""

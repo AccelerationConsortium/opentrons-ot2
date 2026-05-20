@@ -234,3 +234,4 @@ config.yml
 
 # Local planning notes
 plan/
+dev/tailscale setup/*.tgz
