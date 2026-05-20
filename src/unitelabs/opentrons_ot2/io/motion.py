@@ -246,6 +246,24 @@ class OT2MotionController:
         speed_mm_s = flow_rate_ul_s / ul_per_mm
         await self.move_relative({axis: +distance_mm}, speed=speed_mm_s)
 
+    # ============ Motor Current ============
+
+    def set_active_current(self, currents: dict[str, float]) -> None:
+        """Set active (moving) current per axis. Keys are axis letters, values in amps."""
+        self._driver.set_active_current(currents)
+
+    def set_dwelling_current(self, currents: dict[str, float]) -> None:
+        """Set dwelling (idle) current per axis. Keys are axis letters, values in amps."""
+        self._driver.set_dwelling_current(currents)
+
+    def push_active_current(self) -> None:
+        """Save active-current state onto the driver stack for later restore."""
+        self._driver.push_active_current()
+
+    def pop_active_current(self) -> None:
+        """Restore active-current state from the top of the driver stack."""
+        self._driver.pop_active_current()
+
     async def stop(self) -> None:
         """Emergency stop - halt all motion."""
         await self._driver.hard_halt()

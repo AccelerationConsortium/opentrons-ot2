@@ -5,10 +5,12 @@ Uses the OT2MotionController wrapper around Opentrons SmoothieDriver.
 """
 
 import enum
+import typing
 from dataclasses import dataclass
 
 from opentrons.drivers.smoothie_drivers.errors import TipProbeError
 from unitelabs.cdk import sila
+from unitelabs.cdk.sila import constraints
 
 from ..io import OT2MotionController
 
@@ -70,6 +72,20 @@ class Mount(enum.Enum):
 
     LEFT = Axis.B
     RIGHT = Axis.C
+
+
+@dataclass
+class AxisCurrent:
+    """
+    Motor current setting for a single axis.
+
+    OT-2 hardware defaults (from opentrons/config/defaults_ot2.py):
+        Active (moving):  X=1.25 A, Y=1.25 A, Z=0.8 A, A=0.8 A, B=0.05 A, C=0.05 A
+        Dwelling (idle):  X=0.3 A,  Y=0.3 A,  Z=0.1 A,  A=0.1 A,  B=0.05 A, C=0.05 A
+    """
+
+    axis: Axis
+    current_amps: typing.Annotated[float, constraints.MinimalInclusive(0.0), constraints.MaximalInclusive(2.0)]
 
 
 def _dict_to_position(pos: dict[str, float]) -> AxisPosition:
@@ -384,3 +400,35 @@ class MotionControlFeature(sila.Feature):
             True if door is closed.
         """
         return self._controller.read_door_switch()
+
+    # ============ Motor Current ============
+
+    @sila.UnobservableCommand()
+    def set_active_currents(self, currents: list[AxisCurrent]) -> None:
+        """
+        Set the active (moving) current for one or more axes.
+
+        Only the axes included in the list are updated; omitted axes keep their
+        current value. Hardware limit: 0.0-2.0 A per axis.
+        """
+        self._controller.set_active_current({c.axis.value: c.current_amps for c in currents})
+
+    @sila.UnobservableCommand()
+    def set_dwelling_currents(self, currents: list[AxisCurrent]) -> None:
+        """
+        Set the dwelling (idle) current for one or more axes.
+
+        Only the axes included in the list are updated; omitted axes keep their
+        current value. Hardware limit: 0.0-2.0 A per axis.
+        """
+        self._controller.set_dwelling_current({c.axis.value: c.current_amps for c in currents})
+
+    @sila.UnobservableCommand()
+    def push_active_currents(self) -> None:
+        """Save the current active-current state onto the driver stack."""
+        self._controller.push_active_current()
+
+    @sila.UnobservableCommand()
+    def pop_active_currents(self) -> None:
+        """Restore the active-current state from the top of the driver stack."""
+        self._controller.pop_active_current()
