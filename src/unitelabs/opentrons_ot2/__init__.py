@@ -9,6 +9,7 @@ from .features import (
     HeaterShakerFeature,
     MagneticModuleFeature,
     MotionControlFeature,
+    PipetteFeature,
     TemperatureModuleFeature,
     ThermocyclerFeature,
 )
@@ -63,6 +64,7 @@ async def create_app(config: OpentronsOt2Config) -> collections.abc.AsyncGenerat
 
     app = Connector(config)
     app.register(MotionControlFeature(motion_controller))
+    app.register(PipetteFeature(motion_controller))
 
     if not config.use_simulator:
         module_ports = scan_module_ports()

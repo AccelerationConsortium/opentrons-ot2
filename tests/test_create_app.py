@@ -14,6 +14,7 @@ from unitelabs.opentrons_ot2.features import (
     HeaterShakerFeature,
     MagneticModuleFeature,
     MotionControlFeature,
+    PipetteFeature,
     TemperatureModuleFeature,
     ThermocyclerFeature,
 )
@@ -60,11 +61,11 @@ async def _run_app(config: OpentronsOt2Config, module_ports: dict):
 
 
 @pytest.mark.asyncio
-async def test_simulate_registers_only_motion_control():
+async def test_simulate_registers_motion_and_pipette():
     config = OpentronsOt2Config(use_simulator=True)
     async with _run_app(config, module_ports=_ALL_MODULE_PORTS) as (_, registered):
         types = [type(f) for f in registered]
-        assert types == [MotionControlFeature]
+        assert types == [MotionControlFeature, PipetteFeature]
 
 
 @pytest.mark.asyncio
@@ -80,11 +81,11 @@ async def test_simulate_skips_module_scan(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_no_modules_registers_only_motion_control():
+async def test_no_modules_registers_motion_and_pipette():
     config = OpentronsOt2Config(use_simulator=False)
     async with _run_app(config, module_ports={}) as (_, registered):
         types = [type(f) for f in registered]
-        assert types == [MotionControlFeature]
+        assert types == [MotionControlFeature, PipetteFeature]
 
 
 # ── real hardware, individual modules ────────────────────────────────────────
@@ -105,8 +106,9 @@ async def test_single_module_registers_correct_feature(ports, expected_feature):
     async with _run_app(config, module_ports=ports) as (_, registered):
         types = [type(f) for f in registered]
         assert MotionControlFeature in types
+        assert PipetteFeature in types
         assert expected_feature in types
-        assert len(types) == 2
+        assert len(types) == 3
 
 
 @pytest.mark.asyncio
@@ -116,6 +118,7 @@ async def test_all_modules_registers_all_features():
         types = {type(f) for f in registered}
         assert types == {
             MotionControlFeature,
+            PipetteFeature,
             HeaterShakerFeature,
             ThermocyclerFeature,
             TemperatureModuleFeature,

@@ -276,6 +276,33 @@ class OT2MotionController:
         """Return the dwelling currents the driver was initialized with (hardware-revision-correct)."""
         return dict(self._default_dwelling_currents)
 
+    # ============ Pipette ============
+
+    async def read_pipette_model(self, mount: str) -> str:
+        """Read the model string from the pipette EEPROM. Returns '' if no pipette attached."""
+        result = await self._driver.read_pipette_model(mount)
+        return result or ""
+
+    async def read_pipette_id(self, mount: str) -> str:
+        """Read the unique ID from the pipette EEPROM. Returns '' if unreadable."""
+        result = await self._driver.read_pipette_id(mount)
+        return result or ""
+
+    async def configure_mount(
+        self,
+        axis: str,
+        steps_per_mm: float,
+        home_position_mm: float,
+        max_travel_mm: float,
+        retract_mm: float,
+    ) -> None:
+        """Write steps/mm and motion limits for a pipette mount to the Smoothie."""
+        await self._driver.update_steps_per_mm({axis: steps_per_mm})
+        await self._driver.update_pipette_config(
+            axis,
+            {"home": home_position_mm, "max_travel": max_travel_mm, "retract": retract_mm},
+        )
+
     async def stop(self) -> None:
         """Emergency stop - halt all motion."""
         await self._driver.hard_halt()
