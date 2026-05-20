@@ -22,11 +22,13 @@ What is NOT testable in simulation (driver no-ops):
 import pytest
 import pytest_asyncio
 
-from unitelabs.opentrons_ot2.features.motion_control import MotionControlFeature, AxisPosition
+from unitelabs.opentrons_ot2.features.motion_control import Axis, AxisPosition, MotionControlFeature
 from unitelabs.opentrons_ot2.io.motion import OT2MotionController
 
 # Real homed positions reported by the Smoothie firmware defaults.
 HOMED_POSITION = {"X": 418.0, "Y": 353.0, "Z": 218.0, "A": 218.0, "B": 19.0, "C": 19.0}
+
+ALL_AXES = list(Axis)
 
 
 @pytest_asyncio.fixture
@@ -38,7 +40,7 @@ async def feature() -> MotionControlFeature:
 @pytest_asyncio.fixture
 async def homed_feature(feature: MotionControlFeature) -> MotionControlFeature:
     """Feature with all axes already homed."""
-    await feature.home()
+    await feature.home(ALL_AXES)
     return feature
 
 
@@ -59,7 +61,7 @@ def test_homed_flags_all_false_before_homing(feature: MotionControlFeature):
 
 @pytest.mark.asyncio
 async def test_home_all_axes_returns_homed_position(feature: MotionControlFeature):
-    result = await feature.home()
+    result = await feature.home(ALL_AXES)
     assert result.homed_axes == "XYZABC"
     assert result.position.x == HOMED_POSITION["X"]
     assert result.position.y == HOMED_POSITION["Y"]
@@ -69,25 +71,18 @@ async def test_home_all_axes_returns_homed_position(feature: MotionControlFeatur
 
 @pytest.mark.asyncio
 async def test_home_sets_all_homed_flags(feature: MotionControlFeature):
-    await feature.home()
+    await feature.home(ALL_AXES)
     flags = feature.homed_flags()
     assert all([flags.x, flags.y, flags.z, flags.a, flags.b, flags.c])
 
 
 @pytest.mark.asyncio
 async def test_home_subset_of_axes(feature: MotionControlFeature):
-    # Home only the plunger axes (B/C) — independent of gantry homing sequence.
-    result = await feature.home(axes="BC")
+    result = await feature.home([Axis.B, Axis.C])
     assert result.homed_axes == "BC"
     flags = feature.homed_flags()
     assert flags.b and flags.c
     assert not flags.x and not flags.y
-
-
-@pytest.mark.asyncio
-async def test_home_invalid_axis_raises(feature: MotionControlFeature):
-    with pytest.raises(ValueError, match="Invalid axes"):
-        await feature.home(axes="Q")
 
 
 # ── Position ─────────────────────────────────────────────────────────────────
@@ -111,35 +106,23 @@ async def test_move_to_updates_position(homed_feature: MotionControlFeature):
 
 @pytest.mark.asyncio
 async def test_move_axis_updates_single_axis(homed_feature: MotionControlFeature):
-    result = await homed_feature.move_axis(axis="X", position=75.0)
+    result = await homed_feature.move_axis(axis=Axis.X, position=75.0)
     assert result.x == pytest.approx(75.0)
     assert result.y == HOMED_POSITION["Y"]
 
 
 @pytest.mark.asyncio
-async def test_move_axis_case_insensitive(homed_feature: MotionControlFeature):
-    result = await homed_feature.move_axis(axis="x", position=20.0)
-    assert result.x == pytest.approx(20.0)
-
-
-@pytest.mark.asyncio
-async def test_move_axis_invalid_raises(homed_feature: MotionControlFeature):
-    with pytest.raises(ValueError, match="Invalid axis"):
-        await homed_feature.move_axis(axis="Q", position=10.0)
-
-
-@pytest.mark.asyncio
 async def test_move_relative_axis_updates_position(homed_feature: MotionControlFeature):
     before = await homed_feature.get_position()
-    result = await homed_feature.move_relative_axis(axis="X", delta=-10.0)
+    result = await homed_feature.move_relative_axis(axis=Axis.X, delta=-10.0)
     assert result.x == pytest.approx(before.x - 10.0)
     assert result.y == pytest.approx(before.y)
 
 
 @pytest.mark.asyncio
 async def test_move_relative_axis_accumulates(homed_feature: MotionControlFeature):
-    await homed_feature.move_relative_axis(axis="Y", delta=-20.0)
-    result = await homed_feature.move_relative_axis(axis="Y", delta=-20.0)
+    await homed_feature.move_relative_axis(axis=Axis.Y, delta=-20.0)
+    result = await homed_feature.move_relative_axis(axis=Axis.Y, delta=-20.0)
     assert result.y == pytest.approx(HOMED_POSITION["Y"] - 40.0)
 
 
@@ -149,15 +132,9 @@ async def test_move_relative_axis_accumulates(homed_feature: MotionControlFeatur
 @pytest.mark.asyncio
 async def test_probe_returns_current_position(homed_feature: MotionControlFeature):
     # In simulation, probe returns the cached position (no physical contact).
-    pos = await homed_feature.probe(axis="Z", distance=10.0)
+    pos = await homed_feature.probe(axis=Axis.Z, distance=10.0)
     assert isinstance(pos, AxisPosition)
     assert pos.z == pytest.approx(HOMED_POSITION["Z"])
-
-
-@pytest.mark.asyncio
-async def test_probe_invalid_axis_raises(homed_feature: MotionControlFeature):
-    with pytest.raises(ValueError, match="Invalid axis"):
-        await homed_feature.probe(axis="Q", distance=10.0)
 
 
 # ── Firmware ──────────────────────────────────────────────────────────────────
