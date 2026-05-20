@@ -76,3 +76,29 @@ def test_push_pop_restores_previous_active_current(feature: MotionControlFeature
 def test_push_pop_does_not_raise(feature: MotionControlFeature):
     feature.push_active_currents()
     feature.pop_active_currents()
+
+
+# ── Default current properties ────────────────────────────────────────────────
+
+
+def test_default_active_currents_covers_all_axes(feature: MotionControlFeature):
+    defaults = feature.default_active_currents()
+    axes = {c.axis for c in defaults}
+    assert axes == set(Axis)
+
+
+def test_default_dwelling_currents_covers_all_axes(feature: MotionControlFeature):
+    defaults = feature.default_dwelling_currents()
+    axes = {c.axis for c in defaults}
+    assert axes == set(Axis)
+
+
+def test_default_active_currents_are_positive(feature: MotionControlFeature):
+    assert all(c.current_amps > 0 for c in feature.default_active_currents())
+
+
+def test_default_active_currents_unchanged_after_set(feature: MotionControlFeature):
+    before = {c.axis: c.current_amps for c in feature.default_active_currents()}
+    feature.set_active_currents([AxisCurrent(axis=Axis.X, current_amps=0.1)])
+    after = {c.axis: c.current_amps for c in feature.default_active_currents()}
+    assert before == after

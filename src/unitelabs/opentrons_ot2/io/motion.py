@@ -76,6 +76,10 @@ class OT2MotionController:
         """
         self._driver = smoothie_driver
         self._gpio = gpio
+        # Snapshot the hardware-revision-correct defaults chosen by the driver at
+        # init time, before any caller can mutate them via set_active_current etc.
+        self._default_active_currents: dict[str, float] = dict(smoothie_driver._active_current_settings.now)
+        self._default_dwelling_currents: dict[str, float] = dict(smoothie_driver._dwelling_current_settings.now)
 
     @classmethod
     async def build(
@@ -263,6 +267,14 @@ class OT2MotionController:
     def pop_active_current(self) -> None:
         """Restore active-current state from the top of the driver stack."""
         self._driver.pop_active_current()
+
+    def default_active_currents(self) -> dict[str, float]:
+        """Return the active currents the driver was initialized with (hardware-revision-correct)."""
+        return dict(self._default_active_currents)
+
+    def default_dwelling_currents(self) -> dict[str, float]:
+        """Return the dwelling currents the driver was initialized with (hardware-revision-correct)."""
+        return dict(self._default_dwelling_currents)
 
     async def stop(self) -> None:
         """Emergency stop - halt all motion."""

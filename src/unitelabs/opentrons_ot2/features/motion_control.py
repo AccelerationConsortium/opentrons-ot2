@@ -432,3 +432,17 @@ class MotionControlFeature(sila.Feature):
     def pop_active_currents(self) -> None:
         """Restore the active-current state from the top of the driver stack."""
         self._controller.pop_active_current()
+
+    @sila.UnobservableProperty()
+    def default_active_currents(self) -> list[AxisCurrent]:
+        """Hardware-revision-correct active currents the driver was initialized with."""
+        return [
+            AxisCurrent(axis=Axis(k), current_amps=v) for k, v in self._controller.default_active_currents().items()
+        ]
+
+    @sila.UnobservableProperty()
+    def default_dwelling_currents(self) -> list[AxisCurrent]:
+        """Hardware-revision-correct dwelling currents the driver was initialized with."""
+        return [
+            AxisCurrent(axis=Axis(k), current_amps=v) for k, v in self._controller.default_dwelling_currents().items()
+        ]
