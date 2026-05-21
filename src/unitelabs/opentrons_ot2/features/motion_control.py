@@ -75,6 +75,15 @@ class Mount(enum.Enum):
 
 
 @dataclass
+class AxisBound:
+    """Software travel limit for one axis."""
+
+    axis: Axis
+    min_mm: typing.Annotated[float, constraints.MinimalInclusive(0.0)]
+    max_mm: typing.Annotated[float, constraints.MinimalInclusive(0.0)]
+
+
+@dataclass
 class AxisCurrent:
     """
     Motor current setting for a single axis.
@@ -86,6 +95,10 @@ class AxisCurrent:
 
     axis: Axis
     current_amps: typing.Annotated[float, constraints.MinimalInclusive(0.0), constraints.MaximalInclusive(2.0)]
+
+
+class OutOfBoundsError(Exception):
+    """Requested position exceeds the software travel limit for that axis."""
 
 
 def _dict_to_position(pos: dict[str, float]) -> AxisPosition:
@@ -137,7 +150,7 @@ class MotionControlFeature(sila.Feature):
         position = await self._controller.home(axes=axes_str)
         return HomeResult(homed_axes=axes_str, position=_dict_to_position(position))
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[OutOfBoundsError])
     async def move_to(self, position: AxisPosition, speed: float = 0.0) -> AxisPosition:
         """
         Move to an absolute position.
@@ -152,25 +165,31 @@ class MotionControlFeature(sila.Feature):
         Returns:
             The actual position after the move.
         """
+        for ax in Axis:
+            self._check_bounds(ax, getattr(position, ax.value.lower()))
         target = {ax.value: getattr(position, ax.value.lower()) for ax in Axis}
         spd = speed if speed > 0 else None
         await self._controller.move(target=target, speed=spd)
         pos = await self._controller.get_position()
         return _dict_to_position(pos)
 
-    @sila.UnobservableCommand()
-    async def move_axis(self, axis: Axis, position: float, speed: float = 0.0) -> AxisPosition:
+    @sila.UnobservableCommand(errors=[OutOfBoundsError])
+    async def move_axis(
+        self, axis: Axis, position: typing.Annotated[float, constraints.MinimalInclusive(0.0)], speed: float = 0.0
+    ) -> AxisPosition:
         """
         Move a single axis to an absolute position.
 
         Args:
             axis: Axis to move.
-            position: Target position in mm.
+            position: Target position in mm. Must be within the axis software limit
+                      (see AxisBounds property for per-axis maximums).
             speed: Movement speed in mm/sec (0 = default speed).
 
         Returns:
             The actual position after the move.
         """
+        self._check_bounds(axis, position)
         spd = speed if speed > 0 else None
         await self._controller.move(target={axis.value: position}, speed=spd)
         return _dict_to_position(await self._controller.get_position())
@@ -296,6 +315,21 @@ class MotionControlFeature(sila.Feature):
         """Resume motion execution after pause."""
         self._controller.resume()
         return "Motion resumed"
+
+    @sila.UnobservableProperty()
+    def axis_bounds(self) -> list[AxisBound]:
+        """Software travel limits for each axis. Positions outside these bounds are rejected."""
+        return [
+            AxisBound(axis=Axis(ax), min_mm=0.0, max_mm=max_mm) for ax, max_mm in self._controller.axis_bounds.items()
+        ]
+
+    def _check_bounds(self, axis: Axis, position_mm: float) -> None:
+        """Raise OutOfBoundsError if position_mm is outside the axis software limit."""
+        max_mm = self._controller.axis_bounds[axis.value]
+        if not (0.0 <= position_mm <= max_mm):
+            raise OutOfBoundsError(
+                f"Position {position_mm:.3f} mm is outside the {axis.value} axis software limit [0.0, {max_mm}] mm."
+            )
 
     @sila.UnobservableProperty()
     def is_simulating(self) -> bool:

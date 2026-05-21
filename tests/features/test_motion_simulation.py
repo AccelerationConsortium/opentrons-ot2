@@ -158,3 +158,40 @@ async def test_reset_from_error_clears_homed_flags(homed_feature: MotionControlF
 
     flags_after = homed_feature.homed_flags()
     assert not any([flags_after.x, flags_after.y, flags_after.z])
+
+
+# ── AxisBounds ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_axis_bounds_returns_all_axes(feature):
+    bounds = feature.axis_bounds()
+    axes = {b.axis.value for b in bounds}
+    assert axes == {"X", "Y", "Z", "A", "B", "C"}
+
+
+@pytest.mark.asyncio
+async def test_axis_bounds_min_is_zero(feature):
+    for b in feature.axis_bounds():
+        assert b.min_mm == 0.0
+
+
+@pytest.mark.asyncio
+async def test_axis_bounds_max_positive(feature):
+    for b in feature.axis_bounds():
+        assert b.max_mm > 0.0
+
+
+@pytest.mark.asyncio
+async def test_move_axis_out_of_bounds_raises(feature):
+    from unitelabs.opentrons_ot2.features.motion_control import OutOfBoundsError
+
+    await feature.home([Axis.X])
+    with pytest.raises(OutOfBoundsError):
+        await feature.move_axis(Axis.X, position=9999.0)
+
+
+@pytest.mark.asyncio
+async def test_move_axis_within_bounds_does_not_raise(feature):
+    await feature.home([Axis.X])
+    await feature.move_axis(Axis.X, position=10.0)

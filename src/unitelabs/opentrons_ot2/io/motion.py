@@ -149,6 +149,11 @@ class OT2MotionController:
         """Get homing status per axis."""
         return self._driver.homed_flags
 
+    @property
+    def axis_bounds(self) -> dict[str, float]:
+        """Software travel limit (max mm) per axis. Min is always 0.0."""
+        return self._driver.axis_bounds
+
     # ============ Motion Control ============
 
     async def home(self, axes: str = AXES) -> dict[str, float]:
