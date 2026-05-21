@@ -154,6 +154,25 @@ class OT2MotionController:
         """Software travel limit (max mm) per axis. Min is always 0.0."""
         return self._driver.axis_bounds
 
+    @property
+    def board_revision(self) -> str:
+        """Board hardware revision read from GPIO pins (e.g. 'A', 'B', 'C', 'UNKNOWN')."""
+        return self._gpio.board_rev.name
+
+    async def get_serial_number(self) -> str:
+        """Read OT-2 serial number from /var/serial. Returns '' if unavailable."""
+        try:
+            from pathlib import Path
+
+            return Path("/var/serial").read_text().strip()
+        except OSError:
+            return ""
+
+    async def disengage_axes(self, axes: str) -> None:
+        """Disengage stepper motors for the given axes (M18 G-code)."""
+        async with self._lock:
+            await self._driver.disengage_axis(axes)
+
     # ============ Motion Control ============
 
     async def home(self, axes: str = AXES) -> dict[str, float]:

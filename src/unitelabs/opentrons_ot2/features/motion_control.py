@@ -67,6 +67,16 @@ class Axis(enum.Enum):
     C = "C"
 
 
+class BoardRevision(enum.Enum):
+    """OT-2 hardware board revision read from GPIO pins at startup."""
+
+    UNKNOWN = "UNKNOWN"
+    OG = "OG"
+    A = "A"
+    B = "B"
+    C = "C"
+
+
 class Mount(enum.Enum):
     """Pipette mount. Value is the plunger Axis for that mount."""
 
@@ -344,6 +354,32 @@ class MotionControlFeature(sila.Feature):
     def homed_flags(self) -> HomedFlags:
         """Get homing status for each axis."""
         return self._build_homed_flags()
+
+    @sila.UnobservableProperty()
+    def board_revision(self) -> BoardRevision:
+        """Hardware board revision of this OT-2, read from GPIO pins at startup."""
+        return BoardRevision(self._controller.board_revision)
+
+    @sila.UnobservableCommand()
+    async def serial_number(self) -> str:
+        """
+        Read the OT-2 serial number from /var/serial.
+
+        Returns an empty string if the file is absent (e.g. in simulation).
+        """
+        return await self._controller.get_serial_number()
+
+    @sila.UnobservableCommand()
+    async def disengage_axes(self, axes: list[Axis]) -> None:
+        """
+        Disengage stepper motors for the specified axes (M18 G-code).
+
+        Disengaged axes lose position — re-home before resuming motion.
+
+        Args:
+            axes: Axes to disengage. Pass all six to disengage the full robot.
+        """
+        await self._controller.disengage_axes("".join(a.value for a in axes))
 
     @sila.UnobservableCommand()
     async def get_firmware_version(self) -> str:

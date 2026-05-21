@@ -195,3 +195,24 @@ async def test_move_axis_out_of_bounds_raises(feature):
 async def test_move_axis_within_bounds_does_not_raise(feature):
     await feature.home([Axis.X])
     await feature.move_axis(Axis.X, position=10.0)
+
+
+# ── Board revision / serial / disengage ───────────────────────────────────────
+
+
+def test_board_revision_is_unknown_in_simulation(feature: MotionControlFeature):
+    from unitelabs.opentrons_ot2.features.motion_control import BoardRevision
+
+    assert feature.board_revision() == BoardRevision.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_serial_number_returns_string_in_simulation(feature: MotionControlFeature):
+    sn = await feature.serial_number()
+    assert isinstance(sn, str)  # '' in simulation (no /var/serial)
+
+
+@pytest.mark.asyncio
+async def test_disengage_axes_does_not_raise(feature: MotionControlFeature):
+    await feature.home(ALL_AXES)
+    await feature.disengage_axes(list(Axis))
