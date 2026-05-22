@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
     tags: ['*']
+    paths:
+      - 'Dockerfile.build'
+      - 'Dockerfile.build.py312'
+      - 'pyproject.toml'
+      - 'src/**'
 
 jobs:
   # Old OT-2: Python 3.10, Debian-based, glibc 2.25.
