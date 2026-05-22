@@ -3,10 +3,7 @@ revision = 3
 requires-python = ">=3.10, <4.0"
 
 [manifest]
-overrides = [
-    { name = "jsonschema", specifier = ">=4.25" },
-    { name = "opentrons", specifier = "==8.8.1" },
-]
+overrides = [{ name = "jsonschema", specifier = ">=4.25" }]
 
 [[package]]
 name = "aionotify"

@@ -173,7 +173,6 @@ default-groups = "all"
 prerelease = "if-necessary-or-explicit"
 override-dependencies = [
     "jsonschema>=4.25",
-    "opentrons==8.8.1",
 ]
 
 [[tool.uv.index]]

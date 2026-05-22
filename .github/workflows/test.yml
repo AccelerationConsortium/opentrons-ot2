@@ -33,10 +33,9 @@ jobs:
 
       - name: Install dependencies (opentrons ${{ matrix.opentrons-version }})
         run: |
-          if [ "${{ matrix.opentrons-version }}" = "8.8.1" ]; then
-            uv sync --all-extras
-          else
-            uv sync --all-extras --override "opentrons==${{ matrix.opentrons-version }}"
+          uv sync --all-extras
+          if [ "${{ matrix.opentrons-version }}" != "8.8.1" ]; then
+            uv pip install "opentrons==${{ matrix.opentrons-version }}"
           fi
 
       - name: Lint
