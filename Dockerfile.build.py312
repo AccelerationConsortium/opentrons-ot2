@@ -1,0 +1,37 @@
+# Build ARM wheels for the new OT-2 (Python 3.12, glibc 2.40, Buildroot 2025.02).
+#
+# Unlike the py310 build, no compilation is needed:
+# - grpcio has a native cp312/linux_armv7l wheel on PyPI
+# - numpy, gpiod, opentrons come from the robot system via --system-site-packages
+#
+# Only bundled: our package, unitelabs-cdk and its pure-Python deps, grpcio.
+FROM arm32v7/python:3.12-slim-bookworm AS builder
+
+WORKDIR /build
+RUN pip install --upgrade pip wheel build uv
+
+COPY pyproject.toml README.md ./
+COPY src/ src/
+COPY config/ config/
+
+RUN python -m build --wheel && \
+    mkdir -p /output && \
+    cp dist/*.whl /output/
+
+# Resolve unitelabs-cdk deps. Exclude opentrons and its ecosystem (system packages
+# on the robot). grpcio is downloaded separately to get the linux_armv7l wheel.
+RUN printf 'unitelabs-cdk~=0.9.0\n' > /tmp/in.txt && \
+    printf 'opentrons==9.0.0\njsonschema>=4.25\n' > /tmp/overrides.txt && \
+    uv pip compile --override-file /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
+    grep -v '^opentrons\|^opentrons-shared-data\|^opentrons-hardware\|^numpy\|^grpcio\|^gpiod\|^jsonschema\|^pyserial\|^six\|^fastapi\|^uvicorn\|^pydantic\|^anyio\|^httpx' \
+        /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    pip download --no-deps -d /output/ \
+        --platform manylinux_2_17_armv7l \
+        --python-version 312 --implementation cp --abi cp312 \
+        -r /tmp/resolved_filtered.txt
+
+# grpcio: download the native cp312/linux_armv7l wheel (no compilation needed)
+RUN pip download --no-deps -d /output/ \
+        --platform linux_armv7l \
+        --python-version 312 --implementation cp --abi cp312 \
+        grpcio

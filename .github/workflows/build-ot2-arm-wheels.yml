@@ -7,7 +7,9 @@ on:
     tags: ['*']
 
 jobs:
-  build-ot2-arm-wheels:
+  # Old OT-2: Python 3.10, Debian-based, glibc 2.25.
+  # Compiles grpcio, numpy, gpiod from source on Debian Stretch (glibc 2.24).
+  build-ot2-arm-wheels-py310:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -15,20 +17,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build ARM wheel image
+      - name: Build ARM wheel image (py310)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.build
           platforms: linux/arm/v7
           load: true
-          tags: ot2-wheel-builder
+          tags: ot2-wheel-builder-py310
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Extract wheels
         run: |
-          id=$(docker create ot2-wheel-builder)
+          id=$(docker create ot2-wheel-builder-py310)
           docker cp $id:/output dist_arm
           docker rm $id
           ls -la dist_arm/
@@ -36,6 +38,42 @@ jobs:
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ot2-arm-wheels
+          name: ot2-arm-wheels-py310
           path: dist_arm/
+          retention-days: 28
+
+  # New OT-2: Python 3.12, Buildroot, glibc 2.40.
+  # No compilation needed — grpcio has a native cp312/linux_armv7l PyPI wheel.
+  # opentrons, numpy, gpiod come from the robot system via --system-site-packages.
+  build-ot2-arm-wheels-py312:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ARM wheel image (py312)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.build.py312
+          platforms: linux/arm/v7
+          load: true
+          tags: ot2-wheel-builder-py312
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract wheels
+        run: |
+          id=$(docker create ot2-wheel-builder-py312)
+          docker cp $id:/output dist_arm_py312
+          docker rm $id
+          ls -la dist_arm_py312/
+
+      - name: Upload wheels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ot2-arm-wheels-py312
+          path: dist_arm_py312/
           retention-days: 28

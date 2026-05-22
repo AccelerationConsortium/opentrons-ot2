@@ -24,7 +24,7 @@ classifiers = [
 requires-python=">=3.10,<4.0"
 dependencies=[
     "unitelabs-cdk~=0.9.0",
-    "opentrons==8.8.1",
+    "opentrons>=8.8.1",
 ]
 
 [project.urls]
@@ -173,6 +173,7 @@ default-groups = "all"
 prerelease = "if-necessary-or-explicit"
 override-dependencies = [
     "jsonschema>=4.25",
+    "opentrons==8.8.1",
 ]
 
 [[tool.uv.index]]
