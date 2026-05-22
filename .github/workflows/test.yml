@@ -36,8 +36,7 @@ jobs:
           if [ "${{ matrix.opentrons-version }}" = "8.8.1" ]; then
             uv sync --all-extras
           else
-            echo "opentrons==${{ matrix.opentrons-version }}" > /tmp/ot-override.txt
-            uv sync --all-extras --override-file /tmp/ot-override.txt
+            uv sync --all-extras --override "opentrons==${{ matrix.opentrons-version }}"
           fi
 
       - name: Lint
