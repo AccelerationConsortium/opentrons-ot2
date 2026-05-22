@@ -22,7 +22,7 @@ from unitelabs.opentrons_ot2.features import CalibrationFeature, MotionControlFe
 from unitelabs.opentrons_ot2.io import HardwareProxy
 
 
-_CONFIG = OpentronsOt2Config(use_simulator=False, with_robot_server=True, robot_server_port=31950)
+_CONFIG = OpentronsOt2Config(use_simulator=False, with_robot_server=True, robot_server_uds="/run/aiohttp.sock")
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def _reset_robot_server_stubs():
     """Reset robot_server stub call counts between tests."""
     sys.modules["robot_server.hardware"]._hw_api_accessor.reset_mock()
     sys.modules["robot_server.hardware"]._init_task_accessor.reset_mock()
-    sys.modules["robot_server.app_setup"].app.reset_mock()
+    sys.modules["robot_server.app"].app.reset_mock()
 
 
 @contextlib.asynccontextmanager
@@ -146,8 +146,8 @@ async def test_app_state_receives_hardware_proxy():
 
 
 @pytest.mark.asyncio
-async def test_uvicorn_configured_on_robot_server_port():
-    """uvicorn.Config is constructed with the configured robot_server_port."""
+async def test_uvicorn_configured_on_unix_socket():
+    """uvicorn.Config is constructed with the configured robot_server_uds socket path."""
     with (
         patch("uvicorn.Config") as mock_cfg,
         patch(
@@ -163,7 +163,7 @@ async def test_uvicorn_configured_on_robot_server_port():
         gen = create_app(_CONFIG)
         await gen.__anext__()
         _, kwargs = mock_cfg.call_args
-        assert kwargs["port"] == _CONFIG.robot_server_port
+        assert kwargs["uds"] == _CONFIG.robot_server_uds
         with contextlib.suppress(StopAsyncIteration):
             await gen.__anext__()
 

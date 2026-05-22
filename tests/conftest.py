@@ -13,11 +13,11 @@ if "robot_server" not in sys.modules:
     _rs_hw = types.ModuleType("robot_server.hardware")
     _rs_hw._hw_api_accessor = MagicMock(name="_hw_api_accessor")
     _rs_hw._init_task_accessor = MagicMock(name="_init_task_accessor")
-    _rs_app_setup = types.ModuleType("robot_server.app_setup")
-    _rs_app_setup.app = MagicMock(name="robot_server_app")
+    _rs_app = types.ModuleType("robot_server.app")
+    _rs_app.app = MagicMock(name="robot_server_app")
     sys.modules["robot_server"] = _rs
     sys.modules["robot_server.hardware"] = _rs_hw
-    sys.modules["robot_server.app_setup"] = _rs_app_setup
+    sys.modules["robot_server.app"] = _rs_app
 
 try:
     import unitelabs.bus.testing.fixtures  # noqa: F401

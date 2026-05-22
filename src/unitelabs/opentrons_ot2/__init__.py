@@ -44,15 +44,18 @@ class OpentronsOt2Config(ConnectorBaseConfig):
     """Run the opentrons HTTP robot-server in the same process, sharing one SmoothieDriver.
 
     When True, the connector builds a HardwareControlAPI, wraps it in HardwareProxy,
-    and starts the robot-server FastAPI app on robot_server_port alongside the SiLA2
+    and starts the robot-server FastAPI app on robot_server_uds alongside the SiLA2
     gRPC server. Both share a single asyncio.Lock so serial commands cannot interleave.
 
     Only supported on the OT-2 with real hardware (use_simulator must be False).
-    Requires the opentrons-robot-server package to be installed.
+    Requires the opentrons robot_server package to be installed (system Python).
     """
 
-    robot_server_port: int = 31950
-    """TCP port for the opentrons HTTP API when with_robot_server=True."""
+    robot_server_uds: str = "/run/aiohttp.sock"
+    """Unix domain socket path for the opentrons HTTP API when with_robot_server=True.
+
+    nginx on the OT-2 proxies external port 31950 to this socket.
+    """
 
     sila_server: SiLAServerConfig = dataclasses.field(
         default_factory=lambda: SiLAServerConfig(
@@ -140,14 +143,18 @@ async def _create_app_with_robot_server(
     Import note: robot_server.app_setup requires Python 3.8 (OT-2 system Python).
     The import is deferred to this function so dev-environment imports don't fail.
     """
+    import os
+
     import uvicorn
     from opentrons.hardware_control import API
 
-    # robot_server.hardware imports fine on all Python versions
-    from robot_server.hardware import _hw_api_accessor, _init_task_accessor  # type: ignore[import]
+    # Set environment variables the robot-server expects before importing it.
+    # RUNNING_ON_PI enables real GPIO/hardware paths; OT_SMOOTHIE_ID identifies the port.
+    os.environ.setdefault("RUNNING_ON_PI", "true")
+    os.environ.setdefault("OT_SMOOTHIE_ID", "AMA")
 
-    # robot_server.app_setup only importable on Python 3.8 (OT-2 system Python)
-    from robot_server.app_setup import app as robot_server_app  # type: ignore[import]
+    from robot_server.hardware import _hw_api_accessor, _init_task_accessor  # type: ignore[import]
+    from robot_server.app import app as robot_server_app  # type: ignore[import]
 
     # Build one real HardwareControlAPI — this opens /dev/ttyAMA0
     log.info("Building shared HardwareControlAPI on %s", config.serial_port)
@@ -168,17 +175,18 @@ async def _create_app_with_robot_server(
     _init_task_accessor.set_on(robot_server_app.state, init_task)
     _hw_api_accessor.set_on(robot_server_app.state, proxy)
 
-    # Start robot_server on its port in the background (same event loop, no thread)
+    # Start robot_server on the Unix domain socket that nginx proxies to.
+    # nginx listens on TCP 31950 externally and forwards to this socket.
     uv_config = uvicorn.Config(
         robot_server_app,
-        host="0.0.0.0",
-        port=config.robot_server_port,
+        uds=config.robot_server_uds,
+        ws="wsproto",
         loop="none",
         log_level="info",
     )
     uv_server = uvicorn.Server(uv_config)
     robot_server_task = asyncio.create_task(uv_server.serve())
-    log.info("robot-server starting on port %d", config.robot_server_port)
+    log.info("robot-server starting on %s", config.robot_server_uds)
 
     # Build SiLA connector (modules same as standalone path)
     connector = Connector(config)
