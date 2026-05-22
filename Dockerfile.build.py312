@@ -1,10 +1,63 @@
-# Build ARM wheels for the new OT-2 (Python 3.12, glibc 2.40, Buildroot 2025.02).
+# Build self-contained ARM wheels for the new OT-2 (Python 3.12, glibc 2.40, Buildroot 2025.02).
 #
-# Unlike the py310 build, no compilation is needed:
-# - grpcio has a native cp312/linux_armv7l wheel on PyPI
-# - numpy, gpiod, opentrons come from the robot system via --system-site-packages
+# Uses arm32v7/python:3.12-slim-bookworm (glibc 2.36) as the build base.
+# Bookworm's glibc 2.36 < robot's glibc 2.40, so compiled wheels are compatible.
 #
-# Only bundled: our package, unitelabs-cdk and its pure-Python deps, grpcio.
+# Compiled from source (no cp312/armv7l wheels on PyPI):
+#   - numpy 1.26.x  — no BLAS/LAPACK (libopenblas absent on the new OT-2)
+#   - gpiod 1.6.3   — official libgpiod 1.x Python bindings (PascalCase API);
+#                     matches the 1.6.x API on the robot (system gpiod 1.6.5)
+#
+# Downloaded from PyPI (native cp312/armv7l wheels exist):
+#   - grpcio        — linux_armv7l wheel available; no compilation needed
+#   - opentrons==9.0.0 and all other deps
+
+
+# Stage 1: compile numpy for cp312/armv7l.
+# _PYTHON_HOST_PLATFORM forces linux-armv7l tag: uname -m returns aarch64
+# when running arm32v7 containers on an ARM64 host (GitHub Actions ubuntu-24.04-arm).
+FROM arm32v7/python:3.12-slim-bookworm AS numpy-builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential gfortran && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
+    NPY_BLAS_ORDER="" NPY_LAPACK_ORDER="" \
+    pip wheel "numpy>=1.26,<2" --no-deps --wheel-dir=/numpy-output/
+
+
+# Stage 2: compile gpiod Python bindings for cp312/armv7l.
+# Same approach as the py310 build: build from libgpiod 1.6.3 source.
+# The tarball includes a pre-generated configure script.
+FROM arm32v7/python:3.12-slim-bookworm AS gpiod-builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential wget ca-certificates pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN wget -q https://mirrors.edge.kernel.org/pub/software/libs/libgpiod/libgpiod-1.6.3.tar.gz && \
+    tar xzf libgpiod-1.6.3.tar.gz && \
+    cd libgpiod-1.6.3 && \
+    ./configure --prefix=/usr/local --enable-shared --disable-static && \
+    make -j$(nproc) && \
+    make install && \
+    echo /usr/local/lib > /etc/ld.so.conf.d/local.conf && ldconfig && \
+    cd bindings/python && \
+    printf '%s\n' \
+        'from setuptools import setup, Extension' \
+        'setup(name="gpiod", version="1.6.3", ext_modules=[Extension(' \
+        '    "gpiod", sources=["gpiodmodule.c"],' \
+        '    libraries=["gpiod"], library_dirs=["/usr/local/lib"],' \
+        '    include_dirs=["/usr/local/include"])])' \
+        > setup.py && \
+    _PYTHON_HOST_PLATFORM=linux-armv7l \
+    pip wheel . --no-deps --wheel-dir=/gpiod-output/ && \
+    cd / && rm -rf libgpiod-1.6.3*
+
+
+# Stage 3: build our package and download remaining deps.
 FROM arm32v7/python:3.12-slim-bookworm AS builder
 
 WORKDIR /build
@@ -14,24 +67,26 @@ COPY pyproject.toml README.md ./
 COPY src/ src/
 COPY config/ config/
 
+# Resolve the full dep tree against opentrons 9.0.0.
+# Exclude packages compiled from source in earlier stages (numpy, gpiod)
+# and grpcio which is downloaded separately for the linux_armv7l wheel tag.
 RUN python -m build --wheel && \
     mkdir -p /output && \
-    cp dist/*.whl /output/
-
-# Resolve unitelabs-cdk deps. Exclude opentrons and its ecosystem (system packages
-# on the robot). grpcio is downloaded separately to get the linux_armv7l wheel.
-RUN printf 'unitelabs-cdk~=0.9.0\n' > /tmp/in.txt && \
-    printf 'opentrons==9.0.0\njsonschema>=4.25\n' > /tmp/overrides.txt && \
+    cp dist/*.whl /output/ && \
+    printf 'unitelabs-cdk~=0.9.0\nopentrons==9.0.0\nnumpy>=1.26,<2\n' > /tmp/in.txt && \
+    printf 'jsonschema>=4.25\n' > /tmp/overrides.txt && \
     uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
-    grep -v '^opentrons\|^opentrons-shared-data\|^opentrons-hardware\|^numpy\|^grpcio\|^gpiod\|^jsonschema\|^pyserial\|^six\|^fastapi\|^uvicorn\|^pydantic\|^anyio\|^httpx' \
-        /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    grep -v '^numpy\|^grpcio\|^gpiod' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
-        --platform manylinux_2_17_armv7l \
+        --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 312 --implementation cp --abi cp312 \
         -r /tmp/resolved_filtered.txt
 
-# grpcio: download the native cp312/linux_armv7l wheel (no compilation needed)
+# grpcio: native cp312/linux_armv7l wheel on PyPI (no compilation needed)
 RUN pip download --no-deps -d /output/ \
         --platform linux_armv7l \
         --python-version 312 --implementation cp --abi cp312 \
         grpcio
+
+COPY --from=numpy-builder /numpy-output/numpy-*.whl /output/
+COPY --from=gpiod-builder /gpiod-output/gpiod-*.whl /output/
