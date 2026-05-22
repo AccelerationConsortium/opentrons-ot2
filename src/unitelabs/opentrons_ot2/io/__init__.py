@@ -25,12 +25,14 @@ from ._types import RPM, Temperature
 from .heater_shaker import HeaterShakerController
 from .magnetic_module import MagneticModuleController
 from .modules import scan_module_ports
+from .hardware_proxy import HardwareProxy
 from .motion import OT2MotionController
 from .temperature_module import TemperatureModuleController
 from .thermocycler import ThermocyclerController
 
 __all__ = [
     "RPM",
+    "HardwareProxy",
     "HeaterShakerController",
     "MagneticModuleController",
     "OT2MotionController",
