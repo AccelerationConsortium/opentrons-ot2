@@ -12,6 +12,7 @@ Uses:
 
 import asyncio
 import logging
+from pathlib import Path
 
 # Import Opentrons driver components
 from opentrons.config.robot_configs import load_ot2
@@ -204,8 +205,7 @@ class OT2MotionController:
     async def get_serial_number(self) -> str:
         """Read OT-2 serial number from /var/serial. Returns '' if unavailable."""
         try:
-            with open("/var/serial") as f:  # noqa: ASYNC230, PTH123
-                return f.read().strip()
+            return (await asyncio.to_thread(Path("/var/serial").read_text)).strip()
         except OSError:
             return ""
 
