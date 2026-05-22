@@ -204,9 +204,8 @@ class OT2MotionController:
     async def get_serial_number(self) -> str:
         """Read OT-2 serial number from /var/serial. Returns '' if unavailable."""
         try:
-            from pathlib import Path
-
-            return Path("/var/serial").read_text().strip()
+            with open("/var/serial") as f:  # noqa: ASYNC230, PTH123
+                return f.read().strip()
         except OSError:
             return ""
 
