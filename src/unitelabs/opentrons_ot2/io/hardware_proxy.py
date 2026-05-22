@@ -34,9 +34,9 @@ class HardwareProxy:
     _api: HardwareControlAPI
     _lock: asyncio.Lock
 
-    def __init__(self, api: HardwareControlAPI) -> None:
+    def __init__(self, api: HardwareControlAPI, lock: asyncio.Lock | None = None) -> None:
         object.__setattr__(self, "_api", api)
-        object.__setattr__(self, "_lock", asyncio.Lock())
+        object.__setattr__(self, "_lock", lock if lock is not None else asyncio.Lock())
 
     def __setattr__(self, name: str, value: object) -> None:
         setattr(self._api, name, value)

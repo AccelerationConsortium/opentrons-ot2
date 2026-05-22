@@ -15,6 +15,7 @@ import logging
 
 # Import Opentrons driver components
 from opentrons.config.robot_configs import load_ot2
+from opentrons.hardware_control import HardwareControlAPI
 from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
 from opentrons.drivers.smoothie_drivers.constants import (
     AXES,
@@ -69,20 +70,33 @@ class OT2MotionController:
         self,
         smoothie_driver: SmoothieDriver,
         gpio: GPIOCharDev | SimulatingGPIOCharDev,
+        lock: asyncio.Lock | None = None,
     ):
         """
         Initialize with existing driver instances.
 
-        Use the build() classmethod for normal construction.
+        Use the build() classmethod for normal construction, or from_api() when
+        sharing a driver with HardwareControlAPI in the in-process server mode.
         """
         self._driver = smoothie_driver
         self._gpio = gpio
         # Snapshot the hardware-revision-correct defaults chosen by the driver at
         # init time, before any caller can mutate them via set_active_current etc.
-        self._default_active_currents: dict[str, float] = dict(smoothie_driver._active_current_settings.now)
-        self._default_dwelling_currents: dict[str, float] = dict(smoothie_driver._dwelling_current_settings.now)
+        # SimulatingDriver (used by API.build_hardware_simulator) does not expose
+        # current settings, so we fall back to an empty dict in that case.
+        self._default_active_currents: dict[str, float] = (
+            dict(smoothie_driver._active_current_settings.now)
+            if hasattr(smoothie_driver, "_active_current_settings")
+            else {}
+        )
+        self._default_dwelling_currents: dict[str, float] = (
+            dict(smoothie_driver._dwelling_current_settings.now)
+            if hasattr(smoothie_driver, "_dwelling_current_settings")
+            else {}
+        )
         # SmoothieDriver has a single serial connection — concurrent callers must not interleave.
-        self._lock = asyncio.Lock()
+        # An external lock may be supplied to share serialisation with HardwareProxy.
+        self._lock = lock if lock is not None else asyncio.Lock()
 
     @classmethod
     async def build(
@@ -133,6 +147,34 @@ class OT2MotionController:
                 raise
 
         return cls(smoothie_driver=driver, gpio=gpio)
+
+    @classmethod
+    def from_api(
+        cls,
+        hw_api: "HardwareControlAPI",
+        lock: asyncio.Lock,
+    ) -> "OT2MotionController":
+        """
+        Build an OT2MotionController that shares a driver and lock with a HardwareControlAPI.
+
+        Used in the in-process server mode where both the SiLA2 gRPC server and the
+        opentrons HTTP server must share a single SmoothieDriver. The caller creates
+        one asyncio.Lock and passes it to both this method and HardwareProxy so that
+        all callers from both servers are serialised through the same lock.
+
+        Args:
+            hw_api: An already-built HardwareControlAPI (OT-2, not OT-3).
+            lock: Shared asyncio.Lock — must be the same instance passed to HardwareProxy.
+
+        Returns:
+            OT2MotionController wrapping the same SmoothieDriver as hw_api.
+        """
+        backend = hw_api._backend  # type: ignore[attr-defined]
+        return cls(
+            smoothie_driver=backend._smoothie_driver,
+            gpio=backend.gpio_chardev,
+            lock=lock,
+        )
 
     @property
     def is_simulating(self) -> bool:

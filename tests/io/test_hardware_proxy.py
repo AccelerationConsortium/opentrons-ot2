@@ -158,6 +158,21 @@ async def test_current_position_homing_failures(proxy: HardwareProxy) -> None:
     await proxy.gantry_position(mount=types.Mount.RIGHT, fail_on_not_homed=True)
 
 
+# ── from_api shim ─────────────────────────────────────────────────────────────
+
+
+async def test_from_api_shares_driver_and_lock(api: API) -> None:
+    """OT2MotionController.from_api() must share the driver and lock with HardwareProxy."""
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController
+
+    shared_lock = asyncio.Lock()
+    proxy = HardwareProxy(api, lock=shared_lock)
+    controller = OT2MotionController.from_api(api, lock=shared_lock)
+
+    assert controller._lock is proxy._lock is shared_lock
+    assert controller._driver is api._backend._smoothie_driver
+
+
 # ── Lock serialisation ────────────────────────────────────────────────────────
 
 
