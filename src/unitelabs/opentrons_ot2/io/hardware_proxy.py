@@ -68,3 +68,12 @@ class HardwareProxy:
     def wrapped(self) -> "HardwareProxy":
         """Return self — satisfies robot-server's ThreadManager.wrapped() call."""
         return self
+
+    def wraps_instance(self, cls: type) -> bool:
+        """
+        Return True if the underlying API is an instance of cls.
+
+        Satisfies ThreadManager.wraps_instance() used by get_ot2_hardware()
+        to distinguish OT-2 (API) from OT-3 (OT3API) hardware routes.
+        """
+        return isinstance(self._api, cls)

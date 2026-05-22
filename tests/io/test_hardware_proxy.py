@@ -56,6 +56,16 @@ def test_private_state_accessible_via_getattr(proxy: HardwareProxy) -> None:
     assert isinstance(proxy._current_position, dict)
 
 
+def test_wraps_instance_ot2(proxy: HardwareProxy) -> None:
+    """wraps_instance(API) must return True so get_ot2_hardware() routes work."""
+    assert proxy.wraps_instance(API) is True
+
+
+def test_wraps_instance_mismatch(proxy: HardwareProxy) -> None:
+    """wraps_instance with a non-matching type must return False."""
+    assert proxy.wraps_instance(str) is False
+
+
 # ── Motion (ported from test_moves.py) ───────────────────────────────────────
 
 
