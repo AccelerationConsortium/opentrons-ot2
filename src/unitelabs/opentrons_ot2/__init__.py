@@ -69,7 +69,21 @@ class OpentronsOt2Config(ConnectorBaseConfig):
 
 
 async def create_app(config: OpentronsOt2Config) -> collections.abc.AsyncGenerator[Connector, None]:
-    """Create the connector application."""
+    """
+    Create the connector application.
+
+    When ``config.with_robot_server`` is False (the default / simulator mode) this starts
+    only the SiLA2 gRPC server.
+
+    When ``config.with_robot_server`` is True this starts *both* the SiLA2 gRPC server
+    and the opentrons HTTP robot-server in the same process, sharing one
+    ``HardwareControlAPI`` via ``HardwareProxy``.  The HTTP API is served on
+    ``config.robot_server_uds`` (default ``/run/aiohttp.sock``), which nginx on the OT-2
+    proxies to TCP port 31950.  This replaces the stock ``opentrons-robot-server`` systemd
+    service, which must be disabled before deployment.
+
+    See ``_create_app_with_robot_server`` for the in-process HTTP server startup details.
+    """
     log.info(
         "Starting Opentrons OT-2 connector v%s (simulate=%s, port=%s)",
         __version__,
@@ -137,11 +151,25 @@ async def _create_app_with_robot_server(
     """
     Start both the SiLA2 gRPC server and the opentrons HTTP robot-server in one process.
 
-    Both servers share a single HardwareControlAPI and asyncio.Lock via HardwareProxy,
-    so serial commands to the Smoothie cannot interleave.
+    Startup sequence
+    ----------------
+    1. ``API.build_hardware_controller`` opens ``/dev/ttyAMA0`` once.
+    2. ``HardwareProxy`` wraps it with an ``asyncio.Lock`` — every serial command from
+       either server acquires this lock, preventing interleaved writes.
+    3. **App-state pre-population**: before uvicorn starts its lifespan, we set
+       ``_init_task_accessor`` to a completed noop task and ``_hw_api_accessor`` to our
+       proxy on ``robot_server_app.state``.  This causes ``start_initializing_hardware()``
+       (called in the lifespan) to skip its own hardware init (it only acts when the task
+       is ``None``), so the serial port is never opened a second time.
+    4. uvicorn serves ``robot_server_app`` on ``config.robot_server_uds`` (a Unix domain
+       socket).  nginx on the OT-2 proxies TCP 31950 → that socket.
+    5. The SiLA2 ``Connector`` is built and yielded; modules are registered as found.
 
-    Import note: robot_server.app_setup requires Python 3.8 (OT-2 system Python).
-    The import is deferred to this function so dev-environment imports don't fail.
+    Deferred imports
+    ----------------
+    ``robot_server`` is a system package on the OT-2 (not on PyPI).  All imports from it
+    are deferred to this function so that the rest of the package can be imported in a
+    dev environment without the robot-server installed.
     """
     import os
 

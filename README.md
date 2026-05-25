@@ -1,6 +1,36 @@
 # Opentrons OT-2
 
-A SiLA2 connector for the Opentrons OT-2 liquid handling robot
+A SiLA2 connector for the Opentrons OT-2 liquid handling robot that also replaces the
+standard Opentrons robot-server HTTP API. Both servers share a single hardware driver
+instance so they cannot conflict over the serial port.
+
+## Architecture
+
+This project runs two servers in the same process when deployed to a real OT-2:
+
+| Server | Protocol | Port | Purpose |
+|--------|----------|------|---------|
+| SiLA2 connector | gRPC | 50051 | Lab automation clients (SiLA Browser, UniteLabs platform) |
+| Opentrons robot-server | HTTP REST | 31950 | Opentrons App, Ground Control, any REST client |
+
+Both servers are backed by one shared `HardwareControlAPI` wrapped in `HardwareProxy`
+(an `asyncio.Lock` around every serial command). This prevents interleaved writes to
+`/dev/ttyAMA0` and avoids the port-already-open error that would occur if two processes
+each tried to initialise the Smoothie.
+
+The standard `opentrons-robot-server` systemd service is disabled on deployment. Our
+`sila2-connector` service owns the hardware and starts the HTTP API in-process via
+uvicorn on a Unix domain socket (`/run/aiohttp.sock`). nginx on the OT-2 proxies
+external TCP port 31950 to that socket — so the HTTP API is reachable at
+`http://<robot-ip>:31950` exactly as it would be with the stock firmware.
+
+**Key source files:**
+
+- `src/unitelabs/opentrons_ot2/__init__.py` — `create_app()` entry point and
+  `_create_app_with_robot_server()` (the in-process HTTP server startup)
+- `src/unitelabs/opentrons_ot2/io/hardware_proxy.py` — `HardwareProxy` shared-lock wrapper
+- `tests/test_create_app_with_robot_server.py` — unit tests for the startup wiring (mocked)
+- `tests/integration/http_api/` — end-to-end HTTP API tests against a live robot
 
 ## Getting Started
 

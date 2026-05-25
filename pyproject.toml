@@ -38,6 +38,7 @@ test = [
     "pytest-asyncio",
     "pytest-cov",
     "uvicorn",
+    "httpx",
 ]
 dev = [
     "unitelabs-cdk[dev]",
@@ -54,6 +55,7 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = "--color=yes"
 markers = [
     "simulator_only: test only valid against the built-in simulator, skipped with --robot",
+    "robot_http_only: test requires a live robot HTTP API; skipped unless --robot-http (or --robot) is set",
 ]
 
 [tool.ruff]
