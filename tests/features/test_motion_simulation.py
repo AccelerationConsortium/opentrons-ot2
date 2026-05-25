@@ -28,7 +28,7 @@ from unitelabs.opentrons_ot2.io.motion import OT2MotionController
 # Real homed positions reported by the Smoothie firmware defaults.
 HOMED_POSITION = {"X": 418.0, "Y": 353.0, "Z": 218.0, "A": 218.0, "B": 19.0, "C": 19.0}
 
-ALL_AXES = list(Axis)
+ALL_AXES = "XYZABC"
 
 
 @pytest_asyncio.fixture
@@ -78,7 +78,7 @@ async def test_home_sets_all_homed_flags(feature: MotionControlFeature):
 
 @pytest.mark.asyncio
 async def test_home_subset_of_axes(feature: MotionControlFeature):
-    result = await feature.home([Axis.B, Axis.C])
+    result = await feature.home("BC")
     assert result.homed_axes == "BC"
     flags = feature.homed_flags()
     assert flags.b and flags.c
@@ -186,14 +186,14 @@ async def test_axis_bounds_max_positive(feature):
 async def test_move_axis_out_of_bounds_raises(feature):
     from unitelabs.opentrons_ot2.features.motion_control import OutOfBoundsError
 
-    await feature.home([Axis.X])
+    await feature.home("X")
     with pytest.raises(OutOfBoundsError):
         await feature.move_axis(Axis.X, position=9999.0)
 
 
 @pytest.mark.asyncio
 async def test_move_axis_within_bounds_does_not_raise(feature):
-    await feature.home([Axis.X])
+    await feature.home("X")
     await feature.move_axis(Axis.X, position=10.0)
 
 
@@ -215,4 +215,4 @@ async def test_serial_number_returns_string_in_simulation(feature: MotionControl
 @pytest.mark.asyncio
 async def test_disengage_axes_does_not_raise(feature: MotionControlFeature):
     await feature.home(ALL_AXES)
-    await feature.disengage_axes(list(Axis))
+    await feature.disengage_axes("XYZABC")

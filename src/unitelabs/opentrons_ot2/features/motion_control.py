@@ -67,6 +67,10 @@ class Axis(enum.Enum):
     C = "C"
 
 
+_AXIS_CHARS = "".join(ax.value for ax in Axis)
+_AxesStr = typing.Annotated[str, constraints.Pattern(rf"^[{_AXIS_CHARS}{_AXIS_CHARS.lower()}]+$")]
+
+
 class BoardRevision(enum.Enum):
     """OT-2 hardware board revision read from GPIO pins at startup."""
 
@@ -143,7 +147,10 @@ class MotionControlFeature(sila.Feature):
         self._controller = controller
 
     @sila.UnobservableCommand()
-    async def home(self, axes: list[Axis]) -> HomeResult:
+    async def home(
+        self,
+        axes: _AxesStr,
+    ) -> HomeResult:
         """
         Home the specified axes.
 
@@ -151,14 +158,15 @@ class MotionControlFeature(sila.Feature):
         unstick moves for plunger axes, and proper X/Y sequencing.
 
         Args:
-            axes: Axes to home. Pass all six to home the full robot.
+            axes: Axes to home as a string of axis letters, e.g. "XYZABC" for a
+                full home or "BC" to home only the plungers. Case-insensitive.
 
         Returns:
             HomeResult with the homed axes and final position.
         """
-        axes_str = "".join(a.value for a in axes)
-        position = await self._controller.home(axes=axes_str)
-        return HomeResult(homed_axes=axes_str, position=_dict_to_position(position))
+        axes_upper = axes.upper()
+        position = await self._controller.home(axes=axes_upper)
+        return HomeResult(homed_axes=axes_upper, position=_dict_to_position(position))
 
     @sila.UnobservableCommand(errors=[OutOfBoundsError])
     async def move_to(self, position: AxisPosition, speed: float = 0.0) -> AxisPosition:
@@ -370,16 +378,20 @@ class MotionControlFeature(sila.Feature):
         return await self._controller.get_serial_number()
 
     @sila.UnobservableCommand()
-    async def disengage_axes(self, axes: list[Axis]) -> None:
+    async def disengage_axes(
+        self,
+        axes: _AxesStr,
+    ) -> None:
         """
         Disengage stepper motors for the specified axes (M18 G-code).
 
         Disengaged axes lose position — re-home before resuming motion.
 
         Args:
-            axes: Axes to disengage. Pass all six to disengage the full robot.
+            axes: Axes to disengage as a string of axis letters, e.g. "XYZABC".
+                Case-insensitive.
         """
-        await self._controller.disengage_axes("".join(a.value for a in axes))
+        await self._controller.disengage_axes(axes.upper())
 
     @sila.UnobservableCommand()
     async def get_firmware_version(self) -> str:

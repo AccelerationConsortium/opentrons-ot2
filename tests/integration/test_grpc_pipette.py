@@ -1,14 +1,10 @@
 """End-to-end gRPC integration tests for PipetteFeature in simulate mode."""
 
-import contextlib
-
 import grpc
 import grpc.aio
 import pytest
 import pytest_asyncio
 
-from unitelabs.cdk import SiLAServerConfig
-from unitelabs.opentrons_ot2 import OpentronsOt2Config, create_app
 from unitelabs.opentrons_ot2.features.motion_control import Mount
 from unitelabs.opentrons_ot2.features.pipette import PipetteInfo
 
@@ -35,28 +31,10 @@ class _PipetteClient:
 
 
 @pytest_asyncio.fixture
-async def client() -> _PipetteClient:
-    config = OpentronsOt2Config(
-        use_simulator=True,
-        sila_server=SiLAServerConfig(hostname="127.0.0.1", port=0, tls=False),
-        cloud_server_endpoint=None,
-        discovery=None,
-    )
-    gen = create_app(config)
-    connector = await gen.__anext__()
-    await connector.start()
-
-    address = connector.sila_server._address
-    pb = connector.sila_server.protobuf
-    channel = grpc.aio.insecure_channel(address)
-
-    try:
-        yield _PipetteClient(channel, pb)
-    finally:
-        await channel.close()
-        await connector.stop()
-        with contextlib.suppress(StopAsyncIteration):
-            await gen.__anext__()
+async def client(sila_channel) -> _PipetteClient:
+    """Yield a PipetteFeature gRPC client (local sim or --robot target)."""
+    channel, pb = sila_channel
+    return _PipetteClient(channel, pb)
 
 
 @pytest.mark.asyncio
@@ -72,6 +50,7 @@ async def test_get_attached_pipettes_entries_are_pipette_info(client: _PipetteCl
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_get_attached_pipettes_sim_model_is_empty(client: _PipetteClient) -> None:
     result = await client.get_attached_pipettes()
     assert all(p.model == "" for p in result)

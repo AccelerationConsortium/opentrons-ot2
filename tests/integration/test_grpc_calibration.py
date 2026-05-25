@@ -1,14 +1,10 @@
 """End-to-end gRPC integration tests for CalibrationFeature in simulate mode."""
 
-import contextlib
-
 import grpc
 import grpc.aio
 import pytest
 import pytest_asyncio
 
-from unitelabs.cdk import SiLAServerConfig
-from unitelabs.opentrons_ot2 import OpentronsOt2Config, create_app
 from unitelabs.opentrons_ot2.features.calibration import StepsPerMm
 from unitelabs.opentrons_ot2.features.motion_control import Axis
 
@@ -44,28 +40,10 @@ class _CalibrationClient:
 
 
 @pytest_asyncio.fixture
-async def client() -> _CalibrationClient:
-    config = OpentronsOt2Config(
-        use_simulator=True,
-        sila_server=SiLAServerConfig(hostname="127.0.0.1", port=0, tls=False),
-        cloud_server_endpoint=None,
-        discovery=None,
-    )
-    gen = create_app(config)
-    connector = await gen.__anext__()
-    await connector.start()
-
-    address = connector.sila_server._address
-    pb = connector.sila_server.protobuf
-    channel = grpc.aio.insecure_channel(address)
-
-    try:
-        yield _CalibrationClient(channel, pb)
-    finally:
-        await channel.close()
-        await connector.stop()
-        with contextlib.suppress(StopAsyncIteration):
-            await gen.__anext__()
+async def client(sila_channel) -> _CalibrationClient:
+    """Yield a CalibrationFeature gRPC client (local sim or --robot target)."""
+    channel, pb = sila_channel
+    return _CalibrationClient(channel, pb)
 
 
 @pytest.mark.asyncio

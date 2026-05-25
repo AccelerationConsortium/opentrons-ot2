@@ -12,7 +12,6 @@ dataclass returned by the feature method.  The client wrapper extracts that
 value so callers get the dataclass directly.
 """
 
-import contextlib
 import typing
 
 import grpc
@@ -20,8 +19,6 @@ import grpc.aio
 import pytest
 import pytest_asyncio
 
-from unitelabs.cdk import SiLAServerConfig
-from unitelabs.opentrons_ot2 import OpentronsOt2Config, create_app
 from unitelabs.opentrons_ot2.features.motion_control import Axis, AxisPosition, HomedFlags, HomeResult, Mount
 
 _PKG = "sila2.ca.accelerationconsortium.robots.motioncontrolfeature.v1"
@@ -67,10 +64,9 @@ class _MotionClient:
         resp_bytes = await stub(b"")
         return await self._pb.decode(f"{_PKG}.{name}_Responses", resp_bytes)
 
-    async def home(self, axes: list[Axis] | None = None) -> HomeResult:
+    async def home(self, axes: str = "XYZABC") -> HomeResult:
         """Home axes and return the HomeResult dataclass."""
-        selected = axes if axes is not None else list(Axis)
-        return self._single(await self._call("Home", {"axes": selected}), HomeResult)
+        return self._single(await self._call("Home", {"axes": axes}), HomeResult)
 
     async def get_position(self) -> AxisPosition:
         """Return the current AxisPosition dataclass."""
@@ -128,41 +124,24 @@ class _MotionClient:
 
 
 @pytest_asyncio.fixture
-async def client() -> _MotionClient:
-    """Start the connector in simulate mode and yield a connected gRPC client."""
-    config = OpentronsOt2Config(
-        use_simulator=True,
-        sila_server=SiLAServerConfig(hostname="127.0.0.1", port=0, tls=False),
-        cloud_server_endpoint=None,
-        discovery=None,
-    )
-    gen = create_app(config)
-    connector = await gen.__anext__()
-    await connector.start()
-
-    address = connector.sila_server._address
-    pb = connector.sila_server.protobuf
-    channel = grpc.aio.insecure_channel(address)
-
-    try:
-        yield _MotionClient(channel, pb)
-    finally:
-        await channel.close()
-        await connector.stop()
-        with contextlib.suppress(StopAsyncIteration):
-            await gen.__anext__()
+async def client(sila_channel) -> _MotionClient:
+    """Yield a MotionControlFeature gRPC client (local sim or --robot target)."""
+    channel, pb = sila_channel
+    return _MotionClient(channel, pb)
 
 
 # ── Simulation flag and firmware ──────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_firmware_version_is_virtual(client: _MotionClient) -> None:
     """GetFirmwareVersion returns the simulator sentinel string over the wire."""
     assert await client.get_firmware_version() == "Virtual Smoothie"
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_is_simulating_is_true(client: _MotionClient) -> None:
     """Get_IsSimulating property returns True in simulate mode."""
     assert await client.get_is_simulating() is True
@@ -199,7 +178,7 @@ async def test_home_sets_all_homed_flags(client: _MotionClient) -> None:
 @pytest.mark.asyncio
 async def test_home_subset_only_sets_requested_flags(client: _MotionClient) -> None:
     """Homing only BC leaves X, Y, Z, A flags False."""
-    await client.home(axes=[Axis.B, Axis.C])
+    await client.home(axes="BC")
     flags = await client.get_homed_flags()
     assert flags.b is True
     assert flags.c is True

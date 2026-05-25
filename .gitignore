@@ -223,8 +223,10 @@ key.pem
 # Large build artifacts
 *.tar.gz
 *.tar.bz2
+*.whl
 dist_arm/
 dist_arm_new/
+dist_arm_py312/
 dist_connector/connector
 
 # Configuration default paths

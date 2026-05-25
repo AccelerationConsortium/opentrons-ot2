@@ -6,7 +6,7 @@ set -e
 
 HOST="${1:?Usage: $0 <host> [venv_path]}"
 VENV="${2:-/var/sila2_ot2}"
-REMOTE_PKG="$VENV/lib/python3.10/site-packages/unitelabs/opentrons_ot2"
+REMOTE_PKG="$VENV/lib/python3.12/site-packages/unitelabs/opentrons_ot2"
 LOCAL_SRC="$(dirname "$0")/../src/unitelabs/opentrons_ot2/"
 
 echo "Copying to root@$HOST:$REMOTE_PKG ..."
