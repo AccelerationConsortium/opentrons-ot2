@@ -44,7 +44,7 @@ jobs:
       - name: Format
         run: uv run ruff format --check src
 
-      - name: Test
+      - name: Test (unit + gRPC simulator)
         run: uv run pytest --cov=src --cov-report=term --cov-report=xml --junit-xml=junit.xml
 
       - name: Upload coverage
@@ -52,4 +52,36 @@ jobs:
         with:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
+          retention-days: 7
+
+      # ── HTTP + gRPC integration against the simulator ──────────────────────
+      # robot_server and server_utils are not on PyPI; install them directly from
+      # the opentrons monorepo at the matching release tag.  --no-deps skips the
+      # opentrons==0.0.0 monorepo-internal version constraint; opentrons is already
+      # installed above.  Pin fastapi/uvicorn/pydantic-settings to the exact versions
+      # robot_server expects to avoid upgrades that break its internal APIs.
+      - name: Install opentrons robot-server ${{ matrix.opentrons-version }}
+        run: |
+          uv pip install --no-deps \
+            "robot_server @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=robot-server" \
+            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=server-utils"
+          uv pip install \
+            "sqlalchemy==1.4.51" \
+            "paho-mqtt==1.6.1" \
+            "wsproto==1.2.0" \
+            "python-multipart==0.0.6" \
+            "python-dotenv==1.0.1" \
+            "fastapi==0.100.0" \
+            "pydantic-settings==2.4.0" \
+            "uvicorn==0.27.0.post1"
+
+      - name: Integration tests (HTTP API + gRPC, simulator)
+        run: uv run pytest tests/integration/ --with-http-server -v --junit-xml=junit-integration.xml
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-results-${{ matrix.python-version }}
+          path: junit-integration.xml
           retention-days: 7

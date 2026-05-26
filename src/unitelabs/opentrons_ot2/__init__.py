@@ -41,20 +41,28 @@ class OpentronsOt2Config(ConnectorBaseConfig):
     """Serial port for the Smoothie controller."""
 
     with_robot_server: bool = False
-    """Run the opentrons HTTP robot-server in the same process, sharing one SmoothieDriver.
+    """Run the opentrons HTTP robot-server in the same process, sharing one HardwareControlAPI.
 
-    When True, the connector builds a HardwareControlAPI, wraps it in HardwareProxy,
-    and starts the robot-server FastAPI app on robot_server_uds alongside the SiLA2
-    gRPC server. Both share a single asyncio.Lock so serial commands cannot interleave.
+    When True, the connector builds a HardwareControlAPI (real or simulated depending on
+    ``use_simulator``), wraps it in HardwareProxy, and starts the robot-server FastAPI app
+    alongside the SiLA2 gRPC server. Both share a single asyncio.Lock so serial commands
+    cannot interleave.
 
-    Only supported on the OT-2 with real hardware (use_simulator must be False).
-    Requires the opentrons robot_server package to be installed (system Python).
+    Requires the opentrons robot_server package to be installed.
     """
 
     robot_server_uds: str = "/run/aiohttp.sock"
     """Unix domain socket path for the opentrons HTTP API when with_robot_server=True.
 
-    nginx on the OT-2 proxies external port 31950 to this socket.
+    Used on the OT-2 where nginx proxies external port 31950 to this socket.
+    Ignored when robot_server_tcp_port is set.
+    """
+
+    robot_server_tcp_port: int | None = None
+    """TCP port for the opentrons HTTP API when with_robot_server=True.
+
+    When set, uvicorn binds to 127.0.0.1 on this port instead of robot_server_uds.
+    Useful for simulator/testing environments where a Unix socket is not needed.
     """
 
     sila_server: SiLAServerConfig = dataclasses.field(
@@ -184,9 +192,12 @@ async def _create_app_with_robot_server(
     from robot_server.hardware import _hw_api_accessor, _init_task_accessor  # type: ignore[import]
     from robot_server.app import app as robot_server_app  # type: ignore[import]
 
-    # Build one real HardwareControlAPI — this opens /dev/ttyAMA0
-    log.info("Building shared HardwareControlAPI on %s", config.serial_port)
-    real_api = await API.build_hardware_controller(port=config.serial_port)
+    if config.use_simulator:
+        log.info("Building shared HardwareControlAPI (simulator)")
+        real_api = await API.build_simulator()
+    else:
+        log.info("Building shared HardwareControlAPI on %s", config.serial_port)
+        real_api = await API.build_hardware_controller(port=config.serial_port)
 
     shared_lock = asyncio.Lock()
     proxy = HardwareProxy(real_api, lock=shared_lock)
@@ -203,18 +214,30 @@ async def _create_app_with_robot_server(
     _init_task_accessor.set_on(robot_server_app.state, init_task)
     _hw_api_accessor.set_on(robot_server_app.state, proxy)
 
-    # Start robot_server on the Unix domain socket that nginx proxies to.
-    # nginx listens on TCP 31950 externally and forwards to this socket.
-    uv_config = uvicorn.Config(
-        robot_server_app,
-        uds=config.robot_server_uds,
-        ws="wsproto",
-        loop="none",
-        log_level="info",
-    )
+    # Start robot_server on either a TCP port (simulator/test) or a Unix domain socket
+    # (production OT-2, where nginx proxies external port 31950 to the socket).
+    if config.robot_server_tcp_port is not None:
+        uv_config = uvicorn.Config(
+            robot_server_app,
+            host="127.0.0.1",
+            port=config.robot_server_tcp_port,
+            ws="wsproto",
+            loop="none",
+            log_level="info",
+        )
+        log.info("robot-server starting on 127.0.0.1:%d", config.robot_server_tcp_port)
+    else:
+        uv_config = uvicorn.Config(
+            robot_server_app,
+            uds=config.robot_server_uds,
+            ws="wsproto",
+            loop="none",
+            log_level="info",
+        )
     uv_server = uvicorn.Server(uv_config)
     robot_server_task = asyncio.create_task(uv_server.serve())
-    log.info("robot-server starting on %s", config.robot_server_uds)
+    if config.robot_server_tcp_port is None:
+        log.info("robot-server starting on %s", config.robot_server_uds)
 
     # Build SiLA connector (modules same as standalone path)
     connector = Connector(config)

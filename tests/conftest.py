@@ -7,8 +7,13 @@ if "gpiod" not in sys.modules:
     sys.modules["gpiod"] = MagicMock()
 
 # robot_server is an Opentrons-internal package not published to PyPI.
-# Stub it so the with_robot_server=True code path can be exercised in CI.
-if "robot_server" not in sys.modules:
+# Stub it when it is not installed so the with_robot_server=True wiring tests
+# (test_create_app_with_robot_server.py) can run in CI without the real package.
+# When the real robot_server IS installed (e.g. the HTTP integration step), the
+# real package is used and these stubs are not inserted.
+try:
+    import robot_server as _  # noqa: F401
+except ImportError:
     _rs = types.ModuleType("robot_server")
     _rs_hw = types.ModuleType("robot_server.hardware")
     _rs_hw._hw_api_accessor = MagicMock(name="_hw_api_accessor")

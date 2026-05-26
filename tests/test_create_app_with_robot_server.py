@@ -17,6 +17,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# These tests exercise the robot_server stub installed by tests/conftest.py.
+# When the real robot_server package is installed the stub is absent and the
+# mock-call assertions below would break, so skip the whole module.
+_rs_app_mod = sys.modules.get("robot_server.app")
+if _rs_app_mod is None or not isinstance(getattr(_rs_app_mod, "app", None), MagicMock):
+    pytest.skip("real robot_server installed; stub-based tests skipped", allow_module_level=True)
+
 from unitelabs.opentrons_ot2 import OpentronsOt2Config, create_app
 from unitelabs.opentrons_ot2.features import CalibrationFeature, MotionControlFeature, PipetteFeature
 from unitelabs.opentrons_ot2.io import HardwareProxy
