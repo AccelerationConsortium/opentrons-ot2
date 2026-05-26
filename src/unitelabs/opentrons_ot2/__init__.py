@@ -197,7 +197,7 @@ async def _create_app_with_robot_server(
 
     if config.use_simulator:
         log.info("Building shared HardwareControlAPI (simulator)")
-        real_api = await API.build_simulator()
+        real_api = await API.build_hardware_simulator()
     else:
         log.info("Building shared HardwareControlAPI on %s", config.serial_port)
         real_api = await API.build_hardware_controller(port=config.serial_port)
@@ -285,4 +285,4 @@ async def _create_app_with_robot_server(
 
     for mc in module_controllers:
         await mc.disconnect()
-    await real_api.disconnect()
+    await real_api.clean_up()

@@ -208,7 +208,7 @@ async def test_shutdown_stops_uvicorn():
 
 @pytest.mark.asyncio
 async def test_shutdown_disconnects_hardware():
-    """real_api.disconnect is awaited on shutdown."""
+    """real_api.clean_up is awaited on shutdown."""
     async with _run() as r:
         pass
-    r.api.disconnect.assert_awaited_once()
+    r.api.clean_up.assert_awaited_once()
