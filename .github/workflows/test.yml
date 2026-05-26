@@ -66,16 +66,28 @@ jobs:
       - name: Install opentrons robot-server ${{ matrix.opentrons-version }}
         run: |
           VER="${{ matrix.opentrons-version }}"
-          # Override file maps monorepo-internal ==0.0.0 pins:
-          #   opentrons         → ==VER  (IS on PyPI; robot_server/server_utils declare ==0.0.0)
-          #   opentrons-shared-data → ==0.0.0  (git source declares 0.0.0; override so uv
-          #                            accepts it even though opentrons requires ==VER from PyPI)
-          # server-utils is NOT on PyPI; its ==0.0.0 git version satisfies robot_server's dep directly.
-          printf 'opentrons==%s\nopentrons-shared-data==0.0.0\n' "$VER" > /tmp/monorepo-overrides.txt
-          uv pip install --override /tmp/monorepo-overrides.txt \
+          # robot_server/server_utils/opentrons_shared_data are not on PyPI.
+          # Install with --no-deps to skip the monorepo-internal ==0.0.0 dep constraints
+          # (opentrons, opentrons-shared-data, server-utils) that can't be satisfied from PyPI.
+          # --reinstall forces opentrons-shared-data to be replaced by the git build, which
+          # includes the util/ subpackage missing from the PyPI release.
+          uv pip install --no-deps \
             "robot_server @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=robot-server" \
-            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=server-utils" \
+            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=server-utils"
+          uv pip install --no-deps --reinstall \
             "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=shared-data"
+          # Install robot_server's non-monorepo deps (exact versions from its Pipfile.lock).
+          # pydantic and fastapi are pinned together; fastapi==0.100.0 requires pydantic==2.11.7.
+          uv pip install \
+            "fastapi==0.100.0" \
+            "pydantic==2.11.7" \
+            "pydantic-settings==2.4.0" \
+            "python-dotenv==1.0.1" \
+            "python-multipart==0.0.6" \
+            "uvicorn==0.27.0.post1" \
+            "wsproto==1.2.0" \
+            "sqlalchemy==1.4.51" \
+            "paho-mqtt==1.6.1"
 
       - name: Integration tests (HTTP API + gRPC, simulator)
         run: uv run pytest tests/integration/ --with-http-server -v --junit-xml=junit-integration.xml
