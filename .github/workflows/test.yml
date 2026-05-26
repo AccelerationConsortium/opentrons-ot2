@@ -55,27 +55,24 @@ jobs:
           retention-days: 7
 
       # ── HTTP + gRPC integration against the simulator ──────────────────────
-      # robot_server and server_utils are not on PyPI; install them directly from
-      # the opentrons monorepo at the matching release tag.  --no-deps skips the
-      # opentrons==0.0.0 monorepo-internal version constraint; opentrons is already
-      # installed above.  Pin fastapi/uvicorn/pydantic-settings to the exact versions
-      # robot_server expects to avoid upgrades that break its internal APIs.
+      # robot_server and server_utils are not on PyPI; install them from the
+      # opentrons monorepo at the matching release tag.  robot_server's pyproject.toml
+      # pins opentrons/opentrons-shared-data/server-utils at ==0.0.0 (monorepo-internal
+      # constraints).  We override those pins to the real release version so uv can
+      # resolve WITH full deps — picking up fastapi, pydantic, sqlalchemy, etc. from
+      # robot_server's own pyproject.toml without manual enumeration.
+      # opentrons-shared-data is reinstalled from git because the PyPI package omits
+      # the util/ subpackage that robot_server imports.
       - name: Install opentrons robot-server ${{ matrix.opentrons-version }}
         run: |
-          uv pip install --no-deps \
-            "robot_server @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=robot-server" \
-            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=server-utils" \
-            "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=shared-data"
-          uv pip install \
-            "pydantic==2.11.7" \
-            "sqlalchemy==1.4.51" \
-            "paho-mqtt==1.6.1" \
-            "wsproto==1.2.0" \
-            "python-multipart==0.0.6" \
-            "python-dotenv==1.0.1" \
-            "fastapi==0.100.0" \
-            "pydantic-settings==2.4.0" \
-            "uvicorn==0.27.0.post1"
+          VER="${{ matrix.opentrons-version }}"
+          printf 'opentrons==%s\nopentrons-shared-data==%s\nserver-utils==%s\n' \
+            "$VER" "$VER" "$VER" > /tmp/monorepo-overrides.txt
+          uv pip install --override /tmp/monorepo-overrides.txt \
+            "robot_server @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=robot-server" \
+            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=server-utils"
+          uv pip install --no-deps --reinstall \
+            "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=shared-data"
 
       - name: Integration tests (HTTP API + gRPC, simulator)
         run: uv run pytest tests/integration/ --with-http-server -v --junit-xml=junit-integration.xml
