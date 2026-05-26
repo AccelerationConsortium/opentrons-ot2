@@ -66,12 +66,15 @@ jobs:
       - name: Install opentrons robot-server ${{ matrix.opentrons-version }}
         run: |
           VER="${{ matrix.opentrons-version }}"
-          printf 'opentrons==%s\nopentrons-shared-data==%s\nserver-utils==%s\n' \
-            "$VER" "$VER" "$VER" > /tmp/monorepo-overrides.txt
+          # Override file maps monorepo-internal ==0.0.0 pins:
+          #   opentrons         → ==VER  (IS on PyPI; robot_server/server_utils declare ==0.0.0)
+          #   opentrons-shared-data → ==0.0.0  (git source declares 0.0.0; override so uv
+          #                            accepts it even though opentrons requires ==VER from PyPI)
+          # server-utils is NOT on PyPI; its ==0.0.0 git version satisfies robot_server's dep directly.
+          printf 'opentrons==%s\nopentrons-shared-data==0.0.0\n' "$VER" > /tmp/monorepo-overrides.txt
           uv pip install --override /tmp/monorepo-overrides.txt \
             "robot_server @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=robot-server" \
-            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=server-utils"
-          uv pip install --no-deps --reinstall \
+            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=server-utils" \
             "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=shared-data"
 
       - name: Integration tests (HTTP API + gRPC, simulator)
