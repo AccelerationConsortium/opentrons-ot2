@@ -71,12 +71,14 @@ jobs:
           uv pip install --no-deps \
             "robot_server @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=robot-server" \
             "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=server-utils"
-          # Reinstall opentrons and opentrons_shared_data from the git monorepo source.
-          # The PyPI builds omit internal symbols that robot_server imports at module load time
-          # (e.g. opentrons.system.camera.PREVIEW_IMAGE, opentrons_shared_data.util).
+          # Reinstall opentrons monorepo packages from git so robot_server gets all the
+          # internal symbols it imports at module load time.  The PyPI builds omit or differ
+          # from the monorepo source (e.g. PREVIEW_IMAGE, opentrons_shared_data.util,
+          # opentrons_hardware which is not even a dep of the PyPI opentrons package).
           uv pip install --no-deps --reinstall \
             "opentrons @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=api" \
-            "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=shared-data"
+            "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=shared-data" \
+            "opentrons_hardware @ git+https://github.com/Opentrons/opentrons.git@v${VER}#subdirectory=hardware"
           # Install robot_server's non-monorepo deps (versions from its Pipfile.lock).
           # aiohttp: needed by the legacy routers in robot_server 8.8.1.
           uv pip install \
