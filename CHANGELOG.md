@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Replaced magic axis/mount string literals throughout feature and IO layers with `Axis` and `Mount` enums; Set constraints used in SiLA2 interface in place of unvalidated strings
+- **Enum-based API throughout**: replaced all magic axis/mount string literals with `Axis` and `Mount` enums across feature and IO layers; SiLA2 parameters and responses now use Set constraints instead of unvalidated strings, giving clients introspectable valid values and preventing invalid inputs at the protocol level
 - `.pyc` bytecode now precompiled into `/var/cache/sila2-pycache` at deploy time (eliminates 39-minute cold start caused by read-only `/usr/lib` filesystem on OT-2)
 
 ## [0.3.0] - 2026-04-17
