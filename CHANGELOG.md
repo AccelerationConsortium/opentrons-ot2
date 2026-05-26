@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-26
+
+### Added
+
+- `PipetteFeature` — GetAttachedPipettes and ConfigureMount via SiLA2
+- `CalibrationFeature` — raw Smoothie EEPROM write commands for axis calibration
+- `MotionControlFeature` extensions: axis bounds validation, motor current management, BoardRevision, SerialNumber, DisengageAxes, aspirate/dispense commands
+- Dynamic module feature loading at startup via `/dev/ot_module*` scan (heater-shaker, thermocycler, temperature, magnetic)
+- `with_robot_server=True` mode: in-process opentrons HTTP robot-server sharing one HardwareAPI and serial port with the SiLA2 gRPC server via `HardwareProxy` and `asyncio.Lock`
+- `HardwareProxy` shim for in-process driver sharing between `OT2MotionController` and robot_server
+- HTTP + gRPC integration test suite running against the simulator in CI
+- Two CI matrix targets: Python 3.10/opentrons 8.8.1 and Python 3.12/opentrons 9.0.0
+- Self-contained ARM wheel bundle for OT-2 deployment
+- Tailscale setup script
+
+### Changed
+
+- Replaced magic axis/mount string literals throughout feature and IO layers with `Axis` and `Mount` enums; Set constraints used in SiLA2 interface in place of unvalidated strings
+- `.pyc` bytecode now precompiled into `/var/cache/sila2-pycache` at deploy time (eliminates 39-minute cold start caused by read-only `/usr/lib` filesystem on OT-2)
+
 ## [0.3.0] - 2026-04-17
 
 ### Changed

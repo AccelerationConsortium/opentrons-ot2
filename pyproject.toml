@@ -1,6 +1,6 @@
 [project]
 name = "unitelabs-opentrons-ot2"
-version = "0.1.0"
+version = "0.4.0"
 description = "A SiLA2 connector for the Opentrons OT-2 liquid handling robot"
 readme = "README.md"
 authors = [{name = "Acceleration Consortium", email = "developers@accelerationconsortium.ca"},]
