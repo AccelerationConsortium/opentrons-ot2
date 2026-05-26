@@ -15,6 +15,9 @@ scp -r "$LOCAL_SRC"/* "root@$HOST:$REMOTE_PKG/"
 echo "Clearing __pycache__ on robot..."
 ssh "root@$HOST" "find '$REMOTE_PKG' -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true"
 
+echo "Precompiling system site-packages bytecode into /var/cache/sila2-pycache ..."
+ssh "root@$HOST" "mkdir -p /var/cache/sila2-pycache && PYTHONPYCACHEPREFIX=/var/cache/sila2-pycache python3 -m compileall -q /usr/lib/python3.12/site-packages/ 2>/dev/null; true"
+
 echo "Restarting sila2-connector service on robot..."
 ssh "root@$HOST" "systemctl restart sila2-connector"
 sleep 2

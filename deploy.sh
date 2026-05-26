@@ -44,6 +44,10 @@ echo "Installing on robot ..."
 ssh "root@$HOST" "rm -rf $VENV_PATH /var/user-packages/var/sila2_ot2 && sh $REMOTE_DIR/install.sh $VENV_PATH"
 
 echo ""
+echo "Precompiling system site-packages bytecode into /var/cache/sila2-pycache ..."
+ssh "root@$HOST" "mkdir -p /var/cache/sila2-pycache && PYTHONPYCACHEPREFIX=/var/cache/sila2-pycache python3 -m compileall -q /usr/lib/python3.12/site-packages/ 2>/dev/null; true"
+
+echo ""
 echo "Verifying ..."
 ssh "root@$HOST" "$VENV_PATH/bin/python -c 'import grpc, unitelabs.opentrons_ot2; print(\"OK grpc=\"+grpc.__version__)'"
 
