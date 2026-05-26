@@ -64,7 +64,8 @@ jobs:
         run: |
           uv pip install --no-deps \
             "robot_server @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=robot-server" \
-            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=server-utils"
+            "server_utils @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=server-utils" \
+            "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v${{ matrix.opentrons-version }}#subdirectory=shared-data/python"
           uv pip install \
             "sqlalchemy==1.4.51" \
             "paho-mqtt==1.6.1" \
