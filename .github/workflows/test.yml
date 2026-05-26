@@ -90,7 +90,7 @@ jobs:
             "paho-mqtt==1.6.1"
 
       - name: Integration tests (HTTP API + gRPC, simulator)
-        run: uv run pytest tests/integration/ --with-http-server -v --junit-xml=junit-integration.xml
+        run: uv run --no-sync pytest tests/integration/ --with-http-server -v --junit-xml=junit-integration.xml
 
       - name: Upload integration test results
         if: always()
