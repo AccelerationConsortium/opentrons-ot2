@@ -25,6 +25,8 @@ from opentrons.drivers.smoothie_drivers.errors import SmoothieAlarm, SmoothieErr
 from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
 
+from .hardware_proxy import _TimedLock
+
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +74,7 @@ class OT2MotionController:
         smoothie_driver: SmoothieDriver,
         gpio: GPIOCharDev | SimulatingGPIOCharDev,
         lock: asyncio.Lock | None = None,
+        lock_timeout_s: float | None = None,
     ):
         """
         Initialize with existing driver instances.
@@ -97,13 +100,15 @@ class OT2MotionController:
         )
         # SmoothieDriver has a single serial connection — concurrent callers must not interleave.
         # An external lock may be supplied to share serialisation with HardwareProxy.
-        self._lock = lock if lock is not None else asyncio.Lock()
+        raw_lock = lock if lock is not None else asyncio.Lock()
+        self._lock: _TimedLock = _TimedLock(raw_lock, lock_timeout_s)
 
     @classmethod
     async def build(
         cls,
         port: str = DEFAULT_SMOOTHIE_PORT,
         simulate: bool = False,
+        lock_timeout_s: float | None = None,
     ) -> "OT2MotionController":
         """
         Build an OT2MotionController.
@@ -111,6 +116,7 @@ class OT2MotionController:
         Args:
             port: Serial port for Smoothie (default: /dev/ttyAMA0).
             simulate: If True, use simulators instead of real hardware.
+            lock_timeout_s: Seconds to wait for the hardware lock before raising TimeoutError.
 
         Returns:
             Configured OT2MotionController instance.
@@ -147,13 +153,14 @@ class OT2MotionController:
                 )
                 raise
 
-        return cls(smoothie_driver=driver, gpio=gpio)
+        return cls(smoothie_driver=driver, gpio=gpio, lock_timeout_s=lock_timeout_s)
 
     @classmethod
     def from_api(
         cls,
         hw_api: "HardwareControlAPI",
         lock: asyncio.Lock,
+        lock_timeout_s: float | None = None,
     ) -> "OT2MotionController":
         """
         Build an OT2MotionController that shares a driver and lock with a HardwareControlAPI.
@@ -166,6 +173,7 @@ class OT2MotionController:
         Args:
             hw_api: An already-built HardwareControlAPI (OT-2, not OT-3).
             lock: Shared asyncio.Lock — must be the same instance passed to HardwareProxy.
+            lock_timeout_s: Seconds to wait for the lock before raising TimeoutError.
 
         Returns:
             OT2MotionController wrapping the same SmoothieDriver as hw_api.
@@ -175,6 +183,7 @@ class OT2MotionController:
             smoothie_driver=backend._smoothie_driver,
             gpio=backend.gpio_chardev,
             lock=lock,
+            lock_timeout_s=lock_timeout_s,
         )
 
     @property

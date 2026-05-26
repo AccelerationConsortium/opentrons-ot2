@@ -51,6 +51,15 @@ class OpentronsOt2Config(ConnectorBaseConfig):
     Requires the opentrons robot_server package to be installed.
     """
 
+    lock_timeout_s: float | None = None
+    """Seconds to wait to acquire the hardware serial-port lock before raising an error.
+
+    When with_robot_server=True, the SiLA2 gRPC server and robot_server share a single
+    asyncio.Lock. If robot_server holds the lock longer than this, the SiLA2 command
+    raises a descriptive TimeoutError rather than hanging until the gRPC deadline expires.
+    None (the default) means wait indefinitely — the gRPC client deadline governs instead.
+    """
+
     robot_server_uds: str = "/run/aiohttp.sock"
     """Unix domain socket path for the opentrons HTTP API when with_robot_server=True.
 
@@ -107,6 +116,7 @@ async def create_app(config: OpentronsOt2Config) -> collections.abc.AsyncGenerat
     motion_controller = await OT2MotionController.build(
         port=config.serial_port,
         simulate=config.use_simulator,
+        lock_timeout_s=config.lock_timeout_s,
     )
 
     app = Connector(config)
@@ -203,8 +213,8 @@ async def _create_app_with_robot_server(
         real_api = await API.build_hardware_controller(port=config.serial_port)
 
     shared_lock = asyncio.Lock()
-    proxy = HardwareProxy(real_api, lock=shared_lock)
-    motion_controller = OT2MotionController.from_api(real_api, lock=shared_lock)
+    proxy = HardwareProxy(real_api, lock=shared_lock, lock_timeout_s=config.lock_timeout_s)
+    motion_controller = OT2MotionController.from_api(real_api, lock=shared_lock, lock_timeout_s=config.lock_timeout_s)
 
     # Pre-populate robot_server app state before uvicorn starts its lifespan.
     # start_initializing_hardware() skips hardware init when initialize_task is not None,

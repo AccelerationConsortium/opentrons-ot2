@@ -53,5 +53,6 @@
   "use_simulator": false,
   "serial_port": "/dev/ttyAMA0",
   "with_robot_server": true,
-  "robot_server_uds": "/run/aiohttp.sock"
+  "robot_server_uds": "/run/aiohttp.sock",
+  "lock_timeout_s": null
 }

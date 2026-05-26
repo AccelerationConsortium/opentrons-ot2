@@ -21,7 +21,7 @@ from opentrons.hardware_control.types import Axis, MotionChecks
 from opentrons_shared_data.errors.exceptions import PositionUnknownError
 from opentrons.drivers.smoothie_drivers.simulator import SimulatingDriver
 
-from unitelabs.opentrons_ot2.io.hardware_proxy import HardwareProxy
+from unitelabs.opentrons_ot2.io.hardware_proxy import HardwareProxy, _TimedLock
 
 
 @pytest_asyncio.fixture
@@ -179,7 +179,7 @@ async def test_from_api_shares_driver_and_lock(api: API) -> None:
     proxy = HardwareProxy(api, lock=shared_lock)
     controller = OT2MotionController.from_api(api, lock=shared_lock)
 
-    assert controller._lock is proxy._lock is shared_lock
+    assert controller._lock._lock is proxy._lock._lock is shared_lock
     assert controller._driver is api._backend._smoothie_driver
 
 
@@ -213,3 +213,40 @@ async def test_lock_serialises_calls(proxy: HardwareProxy) -> None:
     )
     # All three must complete — order is scheduler-dependent but all must finish
     assert sorted(call_order) == ["a", "b", "c"]
+
+
+# ── _TimedLock ────────────────────────────────────────────────────────────────
+
+
+async def test_timed_lock_no_timeout_acquires() -> None:
+    """timeout_s=None must behave identically to a plain asyncio.Lock."""
+    raw = asyncio.Lock()
+    tl = _TimedLock(raw, timeout_s=None)
+    async with tl:
+        assert raw.locked()
+    assert not raw.locked()
+
+
+async def test_timed_lock_raises_on_timeout() -> None:
+    """When the underlying lock is held, _TimedLock must raise TimeoutError promptly."""
+    raw = asyncio.Lock()
+    await raw.acquire()  # simulate robot_server holding the lock
+
+    tl = _TimedLock(raw, timeout_s=0.05)
+    with pytest.raises(TimeoutError, match="robot_server may be holding the serial port"):
+        async with tl:
+            pass  # should not reach here
+
+    raw.release()
+
+
+async def test_proxy_timeout_raises_on_held_lock(api: API) -> None:
+    """HardwareProxy with lock_timeout_s must raise TimeoutError when the lock is held."""
+    shared_lock = asyncio.Lock()
+    await shared_lock.acquire()  # simulate robot_server holding the lock
+
+    proxy = HardwareProxy(api, lock=shared_lock, lock_timeout_s=0.05)
+    with pytest.raises(TimeoutError, match="robot_server may be holding the serial port"):
+        await proxy.home()
+
+    shared_lock.release()
