@@ -186,8 +186,11 @@ async def _create_app_with_robot_server(
 
     # Set environment variables the robot-server expects before importing it.
     # RUNNING_ON_PI enables real GPIO/hardware paths; OT_SMOOTHIE_ID identifies the port.
-    os.environ.setdefault("RUNNING_ON_PI", "true")
-    os.environ.setdefault("OT_SMOOTHIE_ID", "AMA")
+    # Only set these for real hardware — setting RUNNING_ON_PI=true in simulator mode
+    # causes the opentrons library to attempt Pi-specific hardware init that hangs in CI.
+    if not config.use_simulator:
+        os.environ.setdefault("RUNNING_ON_PI", "true")
+        os.environ.setdefault("OT_SMOOTHIE_ID", "AMA")
 
     from robot_server.hardware import _hw_api_accessor, _init_task_accessor  # type: ignore[import]
     from robot_server.app import app as robot_server_app  # type: ignore[import]
