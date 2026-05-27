@@ -6,7 +6,10 @@ VENV_PATH="${1:-/var/sila2_ot2}"
 CONFIG_DEST="$VENV_PATH/config.json"
 
 echo "Installing to $VENV_PATH..."
-python3 -m venv "$VENV_PATH"
+# --system-site-packages exposes robot_server (an OT-2 system package, not on PyPI)
+# and its deps (uvicorn, wsproto, etc.) to the venv. Our bundled wheels are installed
+# on top and take precedence over system packages where versions differ.
+python3 -m venv --system-site-packages "$VENV_PATH"
 # --root / overrides /etc/pip.conf's "root = /var/user-packages" (which would
 # otherwise redirect installs away from the venv's own site-packages)
 "$VENV_PATH/bin/pip" install --root / --no-index --no-deps *.whl
