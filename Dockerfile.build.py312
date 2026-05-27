@@ -124,9 +124,6 @@ RUN apt-get update && \
 # Smoke-test imports before PyInstaller runs — fails fast if any package is missing.
 RUN python3 -c "import grpc, gpiod, opentrons, numpy, unitelabs.opentrons_ot2; print('imports OK: grpc=%s numpy=%s' % (grpc.__version__, numpy.__version__))"
 
-# Diagnose PyInstaller platform detection so we can verify the bootloader is found.
-RUN python3 -c "import os,platform,struct,PyInstaller; bl=os.path.join(os.path.dirname(PyInstaller.__file__),'bootloader'); print('machine:',platform.machine(),'ptr:',struct.calcsize('P')); [print(' ',d,os.listdir(os.path.join(bl,d))) for d in os.listdir(bl) if os.path.isdir(os.path.join(bl,d))]; from PyInstaller import PLATFORM as P; print('PLATFORM:',P)"
-
 # Build the connector binary.
 # --add-binary bundles libgpiod.so.2 (compiled in gpiod-builder) so the extension resolves
 # it from inside the bundle via PyInstaller's LD_LIBRARY_PATH, not the system.
