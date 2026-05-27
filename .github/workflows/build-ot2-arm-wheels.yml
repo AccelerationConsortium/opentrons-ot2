@@ -69,10 +69,10 @@ jobs:
           path: dist_arm/
           retention-days: 28
 
-      - name: Upload connector artifact
+      - name: Upload connector artifact (py310)
         uses: actions/upload-artifact@v4
         with:
-          name: ot2-connector-arm
+          name: ot2-connector-arm-py310
           path: dist_connector/
           retention-days: 28
 
@@ -95,6 +95,19 @@ jobs:
           platforms: linux/arm/v7
           load: true
           tags: ot2-wheel-builder-py312
+          target: builder
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build connector executable (py312)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.build.py312
+          platforms: linux/arm/v7
+          load: true
+          tags: ot2-exe-builder-py312
+          target: pyinstaller-builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -105,9 +118,25 @@ jobs:
           docker rm $id
           ls -la dist_arm_py312/
 
+      - name: Extract connector binary (py312)
+        run: |
+          mkdir -p dist_connector_py312
+          id=$(docker create ot2-exe-builder-py312)
+          docker cp $id:/exe-output/connector dist_connector_py312/connector
+          docker rm $id
+          cp config/ot2_config.json dist_connector_py312/ot2_config.json
+          ls -la dist_connector_py312/
+
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
           name: ot2-arm-wheels-py312
           path: dist_arm_py312/
+          retention-days: 28
+
+      - name: Upload connector artifact (py312)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ot2-connector-arm-py312
+          path: dist_connector_py312/
           retention-days: 28
