@@ -29,6 +29,7 @@ dependencies=[
     "numpy<1.25; python_version < '3.12'",
     "numpy>=1.26,<2; python_version >= '3.12'",
     "uvicorn>=0.20",
+    "wsproto",
 ]
 
 [project.urls]
