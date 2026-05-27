@@ -1831,11 +1831,12 @@ dev = [
 
 [[package]]
 name = "unitelabs-opentrons-ot2"
-version = "0.1.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "opentrons" },
     { name = "unitelabs-cdk" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -1850,7 +1851,6 @@ test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -1865,7 +1865,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "unitelabs-cdk", specifier = "~=0.9.0" },
     { name = "unitelabs-cdk", extras = ["dev"], marker = "extra == 'dev'" },
-    { name = "uvicorn", marker = "extra == 'test'" },
+    { name = "uvicorn", specifier = ">=0.20" },
 ]
 provides-extras = ["test", "dev"]
 
