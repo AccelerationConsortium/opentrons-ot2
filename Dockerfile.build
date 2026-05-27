@@ -124,12 +124,15 @@ COPY config/ config/
 #   - numpy: compiled without BLAS/LAPACK; libopenblas is absent on the OT-2
 #   - gpiod: opentrons undeclared dep; PyPI "gpiod" is an unrelated ctypes wrapper;
 #     official libgpiod 1.x bindings built from source in gpiod-builder stage
+#   - pydantic/pydantic-core/pydantic-settings: system versions must be used so
+#     the system fastapi 0.100.0 that robot_server depends on is not broken by a
+#     newer pydantic API (FieldInfo.in_ removed in newer pydantic)
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
     printf 'grpcio==1.46.3\n' > /tmp/overrides.txt && \
     uv pip compile --python-version 3.10 --override /tmp/overrides.txt pyproject.toml > /tmp/resolved.txt && \
-    grep -v '^numpy\|^grpcio\|^gpiod' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 310 --implementation cp --abi cp310 \

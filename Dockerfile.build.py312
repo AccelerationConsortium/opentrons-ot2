@@ -68,13 +68,16 @@ COPY src/ src/
 COPY config/ config/
 
 # Resolve the full dep tree from pyproject.toml (python_version markers select 3.12 deps).
-# Exclude packages compiled from source in earlier stages (numpy, gpiod)
-# and grpcio which is downloaded separately for the linux_armv7l wheel tag.
+# Exclude packages compiled from source in earlier stages (numpy, gpiod),
+# grpcio (downloaded separately for the linux_armv7l wheel tag), and
+# pydantic/pydantic-core/pydantic-settings (system versions must be used so
+# the system fastapi 0.100.0 that robot_server depends on is not broken by a
+# newer pydantic API).
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
     uv pip compile --python-version 3.12 pyproject.toml > /tmp/resolved.txt && \
-    grep -v '^numpy\|^grpcio\|^gpiod' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 312 --implementation cp --abi cp312 \
