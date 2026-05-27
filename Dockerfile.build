@@ -154,7 +154,10 @@ COPY --from=builder /output/ /wheels/
 
 # Install all wheels into the Stretch Python 3.10 environment.
 # --no-deps: every required package is already in /wheels/; no PyPI lookups needed.
-RUN /usr/local/bin/pip3 install --no-deps /wheels/*.whl
+# pydantic was excluded from /output to avoid shadowing system pydantic in the venv deploy,
+# but the PyInstaller bundle is self-contained — add it back from PyPI.
+RUN /usr/local/bin/pip3 install --no-deps /wheels/*.whl && \
+    /usr/local/bin/pip3 install pydantic pydantic-settings
 
 # Build the PyInstaller bootloader from source for armv7l on Stretch (glibc 2.24).
 # PyInstaller ships pre-built bootloaders for x86/x86_64/aarch64 only — not armv7l.

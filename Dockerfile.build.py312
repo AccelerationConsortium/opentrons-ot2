@@ -112,7 +112,7 @@ RUN pip install --no-deps /wheels/*.whl && \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends zlib1g-dev && \
     rm -rf /var/lib/apt/lists/* && \
-    pip install pyinstaller-hooks-contrib && \
+    pip install setuptools pyinstaller-hooks-contrib && \
     wget -q https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v5.13.2.tar.gz && \
     tar xzf v5.13.2.tar.gz && \
     cd pyinstaller-5.13.2/bootloader && \
