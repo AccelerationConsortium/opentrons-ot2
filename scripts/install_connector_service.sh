@@ -42,6 +42,6 @@ EOF
 
 systemctl daemon-reload
 systemctl enable sila2-connector
-systemctl start sila2-connector
+systemctl restart sila2-connector
 systemctl status sila2-connector --no-pager
 '
