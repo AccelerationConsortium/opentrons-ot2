@@ -150,6 +150,18 @@ def _simulator_http_url(request: pytest.FixtureRequest) -> Generator[str | None,
         except OSError:
             time.sleep(1)
 
+    # Poll until robot_server hardware init is complete (/health returns non-503).
+    import httpx as _httpx
+
+    for _ in range(30):
+        try:
+            r = _httpx.get(f"{base_url}/health", timeout=2)
+            if r.status_code != 503:
+                break
+        except _httpx.TransportError:
+            pass
+        time.sleep(1)
+
     yield base_url
 
     stop.set()
