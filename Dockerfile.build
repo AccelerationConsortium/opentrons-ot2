@@ -114,26 +114,21 @@ COPY config/ config/
 
 # Dependency resolution strategy:
 #
-# uv pip compile resolves the full transitive dep tree from these top-level inputs:
-#   - unitelabs-cdk: our SiLA framework (pulls in unitelabs-sila → grpcio → six)
-#   - opentrons==8.8.1: the OT-2 driver library
-#   - numpy<1.25: no armv7l wheel on PyPI; compiled in numpy-builder stage
+# uv pip compile resolves the full dep tree from pyproject.toml. Python version
+# markers in pyproject.toml select opentrons==8.8.1 and numpy<1.25 for py310.
 #
-# Packages excluded from pip download (no usable armv7l wheel on PyPI; each has a
-# dedicated builder stage that compiles from source on Debian Stretch, glibc 2.24):
-#   - grpcio==1.46.3: overridden to ensure six>=1.5.2 is captured as a transitive dep
-#     (latest grpcio on PyPI dropped six from its declared deps)
+# Packages excluded from pip download (compiled from source in earlier stages):
+#   - grpcio==1.46.3: no pre-built armv7l wheel on PyPI for glibc 2.24; compiled
+#     in grpcio-builder stage. Overridden here so uv captures six>=1.5.2 as a
+#     transitive dep (latest grpcio dropped six from its declared deps).
 #   - numpy: compiled without BLAS/LAPACK; libopenblas is absent on the OT-2
-#   - gpiod: opentrons undeclared dep; PyPI "gpiod" is an unrelated ctypes wrapper with
-#     a different API (lowercase vs PascalCase); official libgpiod 1.x bindings built
-#     from source in gpiod-builder stage
-# pip downloads the remaining pinned packages with --no-deps (no re-resolution).
+#   - gpiod: opentrons undeclared dep; PyPI "gpiod" is an unrelated ctypes wrapper;
+#     official libgpiod 1.x bindings built from source in gpiod-builder stage
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
-    printf 'unitelabs-cdk~=0.9.0\nopentrons==8.8.1\nnumpy<1.25\n' > /tmp/in.txt && \
-    printf 'jsonschema>=4.25\ngrpcio==1.46.3\n' > /tmp/overrides.txt && \
-    uv pip compile --override /tmp/overrides.txt /tmp/in.txt > /tmp/resolved.txt && \
+    printf 'grpcio==1.46.3\n' > /tmp/overrides.txt && \
+    uv pip compile --python-version 3.10 --override /tmp/overrides.txt pyproject.toml > /tmp/resolved.txt && \
     grep -v '^numpy\|^grpcio\|^gpiod' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
