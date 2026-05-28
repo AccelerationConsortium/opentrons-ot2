@@ -62,6 +62,9 @@ jobs:
           cp config/ot2_config.json dist_connector/ot2_config.json
           ls -la dist_connector/
 
+      - name: Smoke-test connector binary (py310)
+        run: docker run --rm --platform linux/arm/v7 ot2-exe-builder /exe-output/connector --help
+
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
@@ -126,6 +129,9 @@ jobs:
           docker rm $id
           cp config/ot2_config.json dist_connector_py312/ot2_config.json
           ls -la dist_connector_py312/
+
+      - name: Smoke-test connector binary (py312)
+        run: docker run --rm --platform linux/arm/v7 ot2-exe-builder-py312 /exe-output/connector --help
 
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
