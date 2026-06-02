@@ -17,11 +17,16 @@ set -e
 HOST="${1:-ot2cep20240218r04}"
 WHEEL_DIR="${2:-dist_arm}"
 VENV_PATH="/var/sila2_ot2"
-CONFIG_SRC="config/ot2_config.json"
-[ -f "$SCRIPT_DIR/config/ot2_config.local.json" ] && CONFIG_SRC="config/ot2_config.local.json"
 REMOTE_DIR="/root/dist_arm"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -f "$SCRIPT_DIR/config/ot2_config.local.json" ]; then
+    CONFIG_SRC="$SCRIPT_DIR/config/ot2_config.local.json"
+    echo "Config: config/ot2_config.local.json (local override)"
+else
+    CONFIG_SRC="$SCRIPT_DIR/config/ot2_config.json"
+fi
 
 if [ ! -d "$SCRIPT_DIR/$WHEEL_DIR" ]; then
     echo "ERROR: Wheel directory '$WHEEL_DIR' not found."

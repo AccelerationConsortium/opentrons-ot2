@@ -37,8 +37,12 @@ echo ""
 echo "Copying connector binary to $HOST ..."
 ssh "root@$HOST" "mount -o remount,rw / && mkdir -p $INSTALL_PATH"
 scp -O "$SCRIPT_DIR/$CONNECTOR_DIR/connector" "root@$HOST:$INSTALL_PATH/connector"
-CONFIG_FILE="$SCRIPT_DIR/$CONNECTOR_DIR/ot2_config.json"
-[ -f "$SCRIPT_DIR/$CONNECTOR_DIR/ot2_config.local.json" ] && CONFIG_FILE="$SCRIPT_DIR/$CONNECTOR_DIR/ot2_config.local.json"
+if [ -f "$SCRIPT_DIR/config/ot2_config.local.json" ]; then
+    CONFIG_FILE="$SCRIPT_DIR/config/ot2_config.local.json"
+    echo "Config: config/ot2_config.local.json (local override)"
+else
+    CONFIG_FILE="$SCRIPT_DIR/$CONNECTOR_DIR/ot2_config.json"
+fi
 scp -O "$CONFIG_FILE" "root@$HOST:$INSTALL_PATH/config.json"
 ssh "root@$HOST" "chmod +x $INSTALL_PATH/connector"
 
