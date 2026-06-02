@@ -43,7 +43,7 @@ echo ""
 echo "Copying wheels and scripts to $HOST:$REMOTE_DIR ..."
 ssh "root@$HOST" "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR"
 scp -O "$SCRIPT_DIR/scripts/install.sh" "$SCRIPT_DIR/$WHEEL_DIR"/*.whl "root@$HOST:$REMOTE_DIR/"
-scp -O "$SCRIPT_DIR/$CONFIG_SRC" "root@$HOST:$REMOTE_DIR/ot2_config.json"
+scp -O "$CONFIG_SRC" "root@$HOST:$REMOTE_DIR/ot2_config.json"
 
 echo ""
 echo "Installing on robot ..."
