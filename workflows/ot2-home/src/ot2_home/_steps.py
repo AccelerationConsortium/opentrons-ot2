@@ -34,17 +34,17 @@ async def connect_to_ot2_step(device_name: str = INSTRUMENT_NAME):
 
 
 @task(name="Step: Home OT-2", log_prints=True, cache_policy=NONE, retries=0)
-async def home_ot2_step(ot2, axes: str = "XYZABC") -> None:
+async def home_ot2_step(ot2, axes: str = "XYZ") -> None:
     """
     Home the specified axes on the OT-2.
 
     Args:
       ot2: Connected OT-2 service instance.
-      axes: Axes to home (default: all axes).
+      axes: Axes to home (default: XYZ gantry axes; excludes A/B/C pipette plungers).
     """
     logger = get_logger()
     logger.info(f"Homing axes: {axes}")
-    await ot2.motion_control.home(axes=axes)
+    await ot2.motion_control_feature.home(axes=axes)
     logger.info("Homing complete")
 
 
@@ -60,6 +60,6 @@ async def get_position_step(ot2) -> str:
       Position string for logging.
     """
     logger = get_logger()
-    position = await ot2.motion_control.get_position()
+    position = await ot2.motion_control_feature.get_position()
     logger.info(f"Position: {position}")
     return str(position)

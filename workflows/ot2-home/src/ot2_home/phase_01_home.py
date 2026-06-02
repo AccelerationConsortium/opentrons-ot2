@@ -25,7 +25,7 @@ async def phase_home(device_name: str = INSTRUMENT_NAME) -> None:
 
     Steps:
       1. connect_to_ot2_step  — get service handle
-      2. home_ot2_step        — home all axes (XYZABC)
+      2. home_ot2_step        — home gantry axes (XYZ)
       3. get_position_step    — read and log final axis positions
 
     Args:
