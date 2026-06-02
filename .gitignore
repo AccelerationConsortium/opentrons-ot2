@@ -234,6 +234,9 @@ config.json
 config.yaml
 config.yml
 
+# Local config overrides (real hostnames/credentials, never commit)
+config/ot2_config.local.json
+
 # Local planning notes
 plan/
 dev/tailscale setup/*.tgz

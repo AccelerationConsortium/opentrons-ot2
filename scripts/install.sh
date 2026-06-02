@@ -14,7 +14,10 @@ python3 -m venv --system-site-packages "$VENV_PATH"
 # otherwise redirect installs away from the venv's own site-packages)
 "$VENV_PATH/bin/pip" install --root / --no-index --no-deps *.whl
 
-if [ -f ot2_config.json ]; then
+if [ -f ot2_config.local.json ]; then
+    cp ot2_config.local.json "$CONFIG_DEST"
+    echo "Config installed to $CONFIG_DEST (from local override)"
+elif [ -f ot2_config.json ]; then
     cp ot2_config.json "$CONFIG_DEST"
     echo "Config installed to $CONFIG_DEST"
 fi
