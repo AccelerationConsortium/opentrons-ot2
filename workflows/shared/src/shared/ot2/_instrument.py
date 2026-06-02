@@ -11,10 +11,11 @@ class OT2:
     exposes a pipette interface that mirrors unitelabs.liquid_handling.hamilton.
     """
 
-    def __init__(self, service) -> None:
+    def __init__(self, service, tip_length_mm: float = 0.0) -> None:
         self._service = service
         self._pipette = OT2Pipette(
             motion_control=service.motion_control_feature,
+            tip_length_mm=tip_length_mm,
         )
 
     @property

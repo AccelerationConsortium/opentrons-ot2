@@ -23,24 +23,35 @@ class OT2Pipette:
     mirror the MicrolabSTAR SDK interface used by the Hamilton workflow template:
       pick_up_tip / aspirate / dispense / discard_tip.
 
-    Movement pattern: raise to safe travel height → move X/Y → lower to target.
+    Movement pattern: raise to safe travel height -> move X/Y -> lower to target.
     This avoids diagonal sweeps that could clip labware.
+
+    Coordinate convention
+    ---------------------
+    OT2Labware computes well.approach_a and well.working_a assuming the NOZZLE
+    is the reference point (no tip). For aspirate/dispense operations where a tip
+    is attached, the working depth must be raised by tip_length_mm so the TIP END
+    (not the nozzle) reaches the target liquid height. This class tracks the
+    current tip length and applies that correction automatically.
     """
 
     def __init__(
         self,
         motion_control,
+        tip_length_mm: float = 0.0,
         ul_per_mm: float = P300_UL_PER_MM,
         aspirate_flow_rate_ul_s: float = P300_ASPIRATE_FLOW_RATE_UL_S,
         dispense_flow_rate_ul_s: float = P300_DISPENSE_FLOW_RATE_UL_S,
         mix_cycles: int = 3,
     ) -> None:
         self._mc = motion_control
+        self._tip_length_mm = tip_length_mm
         self._ul_per_mm = ul_per_mm
         self._aspirate_flow_rate = aspirate_flow_rate_ul_s
         self._dispense_flow_rate = dispense_flow_rate_ul_s
         self._mix_cycles = mix_cycles
         self.has_tip: bool = False
+        self._current_tip_length: float = 0.0  # set on pick_up_tip, cleared on discard_tip
 
     # ------------------------------------------------------------------
     # Internal movement helpers
@@ -59,6 +70,16 @@ class OT2Pipette:
         await self._move_xy(well.x, well.y)
         await self._mc.move_axis(axis="a", position=well.approach_a, speed=0.0)
 
+    def _working_a(self, well: OT2Well) -> float:
+        """
+        Effective working depth for the current tip state.
+
+        well.working_a is the NOZZLE position at working depth (no tip).
+        When a tip is attached the nozzle must be higher by tip_length_mm so
+        the tip end reaches the same deck height.
+        """
+        return well.working_a + self._current_tip_length
+
     # ------------------------------------------------------------------
     # Public interface (mirrors MicrolabSTAR lh.pipettes.*)
     # ------------------------------------------------------------------
@@ -66,9 +87,11 @@ class OT2Pipette:
     async def pick_up_tip(self, well: OT2Well) -> None:
         """Move to the tip rack well, press onto tips, retract."""
         await self._approach(well)
+        # well.working_a for a tip rack is the nozzle press depth (no tip correction needed)
         await self._mc.move_axis(axis="a", position=well.working_a, speed=0.0)
         await self._raise()
         self.has_tip = True
+        self._current_tip_length = self._tip_length_mm
 
     async def aspirate(self, wells: list[OT2Well], volume_ul: float) -> None:
         """
@@ -80,7 +103,7 @@ class OT2Pipette:
         """
         well = wells[0]
         await self._approach(well)
-        await self._mc.move_axis(axis="a", position=well.working_a, speed=0.0)
+        await self._mc.move_axis(axis="a", position=self._working_a(well), speed=0.0)
         await self._mc.aspirate(
             mount="right",
             volume_ul=volume_ul,
@@ -105,7 +128,7 @@ class OT2Pipette:
         well = wells[0]
         mix_vol = mix_volume_ul if mix_volume_ul is not None else volume_ul * _MIX_VOLUME_FRACTION
         await self._approach(well)
-        await self._mc.move_axis(axis="a", position=well.working_a, speed=0.0)
+        await self._mc.move_axis(axis="a", position=self._working_a(well), speed=0.0)
         await self._mc.dispense(
             mount="right",
             volume_ul=volume_ul,
@@ -136,3 +159,4 @@ class OT2Pipette:
         await self._mc.move_relative_axis(axis="a", delta=_TRASH_EJECT_DELTA, speed=0.0)
         await self._raise()
         self.has_tip = False
+        self._current_tip_length = 0.0

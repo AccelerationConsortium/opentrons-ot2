@@ -17,12 +17,38 @@ Typical call sequence for a pipette mount (mirrors Opentrons controller.py):
   4. UpdateRetractDistance — plunger axis (B or C)
 """
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
+import opentrons_shared_data
 from unitelabs.cdk import sila
 
 from ..io import OT2MotionController
 from .motion_control import Axis
+
+_TIPRACK_300UL_DIR = (
+    Path(opentrons_shared_data.__file__).parent
+    / "data"
+    / "labware"
+    / "definitions"
+    / "2"
+    / "opentrons_96_tiprack_300ul"
+)
+
+
+@dataclass
+class RightMountCalibration:
+    """Calibration values for the right pipette mount."""
+
+    nozzle_deck_a: float
+    """Machine A-axis value when the right nozzle (no tip) is exactly at deck Z=0.
+    Derived from the robot's deck calibration matrix and pipette offset calibration.
+    Use as CALIBRATED_DECK_A in OT2Labware / OT2Pipette."""
+
+    tip_length_mm: float
+    """Length of the standard 300 uL tip in mm (from opentrons_96_tiprack_300ul definition).
+    Add this to working depths when a tip is attached."""
 
 
 @dataclass
@@ -107,3 +133,53 @@ class CalibrationFeature(sila.Feature):
         """
         # Axis is required by the driver method signature but ignored for debounce.
         await self._controller.update_pipette_config("B", {"debounce": debounce_mm})
+
+    @sila.UnobservableCommand()
+    async def get_right_mount_calibration(self) -> RightMountCalibration:
+        """
+        Return calibration values for the right pipette mount.
+
+        Reads the robot's stored deck calibration and pipette offset calibration to
+        compute the A-axis value when the right nozzle is at deck Z=0. Also returns
+        the standard 300 uL tip length. Together these let workflow code compute
+        exact well positions without any hardcoded constants.
+
+        The robot must be homed before calling this command so the current machine
+        position is meaningful.
+
+        Returns:
+            RightMountCalibration with nozzle_deck_a and tip_length_mm.
+
+        Raises:
+            RuntimeError: If not running in with_robot_server mode (hw_api unavailable).
+        """
+        from opentrons.hardware_control.types import Axis as OTAxis, CriticalPoint
+        from opentrons.types import Mount
+
+        hw_api = self._controller._hw_api
+        if hw_api is None:
+            raise RuntimeError(
+                "get_right_mount_calibration requires with_robot_server=True — "
+                "the HardwareAPI is not available in standalone connector mode."
+            )
+
+        # Machine A position (right mount) from the Smoothie driver cache.
+        machine_a = self._controller.position.get("A", 0.0)
+
+        # Deck position of the right nozzle. current_position applies the full
+        # calibration stack: deck attitude matrix + pipette offset + nozzle geometry.
+        nozzle_deck_pos = await hw_api.current_position(Mount.RIGHT, critical_point=CriticalPoint.NOZZLE)
+        nozzle_deck_z = nozzle_deck_pos.get(OTAxis.Z_R, 0.0)
+
+        # When nozzle_deck_z = 0, machine_a = machine_a - nozzle_deck_z.
+        calibrated_nozzle_deck_a = machine_a - nozzle_deck_z
+
+        # Tip length from the opentrons_96_tiprack_300ul labware definition.
+        versions = sorted(_TIPRACK_300UL_DIR.glob("*.json"), key=lambda p: int(p.stem))
+        tiprack_def = json.loads(versions[-1].read_text())
+        tip_length_mm = float(tiprack_def["parameters"]["tipLength"])
+
+        return RightMountCalibration(
+            nozzle_deck_a=calibrated_nozzle_deck_a,
+            tip_length_mm=tip_length_mm,
+        )

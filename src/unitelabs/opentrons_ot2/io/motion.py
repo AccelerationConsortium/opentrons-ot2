@@ -69,6 +69,8 @@ class OT2MotionController:
     3. Handles GPIO for lights and buttons
     """
 
+    _hw_api: "HardwareControlAPI | None" = None
+
     def __init__(
         self,
         smoothie_driver: SmoothieDriver,
@@ -179,12 +181,14 @@ class OT2MotionController:
             OT2MotionController wrapping the same SmoothieDriver as hw_api.
         """
         backend = hw_api._backend  # type: ignore[attr-defined]
-        return cls(
+        controller = cls(
             smoothie_driver=backend._smoothie_driver,
             gpio=backend.gpio_chardev,
             lock=lock,
             lock_timeout_s=lock_timeout_s,
         )
+        controller._hw_api = hw_api
+        return controller
 
     @property
     def is_simulating(self) -> bool:
