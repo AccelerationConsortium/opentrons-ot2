@@ -30,6 +30,19 @@ jobs:
           platforms: linux/arm/v7
           load: true
           tags: ot2-wheel-builder-py310
+          target: builder
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build connector executable
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.build
+          platforms: linux/arm/v7
+          load: true
+          tags: ot2-exe-builder
+          target: pyinstaller-builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -40,11 +53,30 @@ jobs:
           docker rm $id
           ls -la dist_arm/
 
+      - name: Extract connector binary
+        run: |
+          mkdir -p dist_connector
+          id=$(docker create ot2-exe-builder)
+          docker cp $id:/exe-output/connector dist_connector/connector
+          docker rm $id
+          cp config/ot2_config.json dist_connector/ot2_config.json
+          ls -la dist_connector/
+
+      - name: Smoke-test connector binary (py310)
+        run: docker run --rm --platform linux/arm/v7 ot2-exe-builder /exe-output/connector --help
+
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
           name: ot2-arm-wheels-py310
           path: dist_arm/
+          retention-days: 28
+
+      - name: Upload connector artifact (py310)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ot2-connector-arm-py310
+          path: dist_connector/
           retention-days: 28
 
   # New OT-2: Python 3.12, Buildroot, glibc 2.40.
@@ -66,6 +98,19 @@ jobs:
           platforms: linux/arm/v7
           load: true
           tags: ot2-wheel-builder-py312
+          target: builder
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build connector executable (py312)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.build.py312
+          platforms: linux/arm/v7
+          load: true
+          tags: ot2-exe-builder-py312
+          target: pyinstaller-builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -76,9 +121,28 @@ jobs:
           docker rm $id
           ls -la dist_arm_py312/
 
+      - name: Extract connector binary (py312)
+        run: |
+          mkdir -p dist_connector_py312
+          id=$(docker create ot2-exe-builder-py312)
+          docker cp $id:/exe-output/connector dist_connector_py312/connector
+          docker rm $id
+          cp config/ot2_config.json dist_connector_py312/ot2_config.json
+          ls -la dist_connector_py312/
+
+      - name: Smoke-test connector binary (py312)
+        run: docker run --rm --platform linux/arm/v7 ot2-exe-builder-py312 /exe-output/connector --help
+
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
           name: ot2-arm-wheels-py312
           path: dist_arm_py312/
+          retention-days: 28
+
+      - name: Upload connector artifact (py312)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ot2-connector-arm-py312
+          path: dist_connector_py312/
           retention-days: 28
