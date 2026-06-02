@@ -17,8 +17,8 @@
     "default_lifetime": 3600.0
   },
   "cloud_server_endpoint": {
-    "hostname": "localhost",
-    "port": 50000,
+    "hostname": "YOUR_TENANT_UUID.academic.unitelabs.io",
+    "port": 443,
     "tls": true,
     "root_certificates": null,
     "certificate_chain": null,

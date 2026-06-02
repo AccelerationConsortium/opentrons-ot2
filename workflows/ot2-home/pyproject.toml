@@ -1,0 +1,36 @@
+[project]
+name = "ot2-home"
+version = "0.1.0"
+description = "Home the OT-2 and log final axis positions."
+requires-python = ">=3.12"
+dependencies = [
+    "unitelabs-sdk[automate]~=0.11.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-asyncio", "pytest-cov"]
+dev = ["ruff", "pre-commit", "commitizen"]
+
+[project.scripts]
+workflow = "ot2_home.__main__:main"
+
+[tool.unitelabs.workflow]
+display_name = "OT-2 Home"
+entrypoint = "workflow.py:ot2_home_flow"
+tags = ["ot2"]
+
+[tool.uv]
+default-groups = "all"
+prerelease = "if-necessary-or-explicit"
+
+[[tool.uv.index]]
+name = "unitelabs"
+url = "https://gitlab.com/api/v4/groups/1009252/-/packages/pypi/simple"
+authenticate = "always"
+
+[tool.uv.sources]
+unitelabs-sdk = { index = "unitelabs" }
+
+[build-system]
+requires = ["uv_build>=0.4,<0.10"]
+build-backend = "uv_build"
