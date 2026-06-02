@@ -38,8 +38,8 @@ async def connect_step(device_name: str = INSTRUMENT_NAME):
 async def home_step(service) -> None:
     """Home XYZ gantry axes."""
     logger = get_logger()
-    logger.info("Homing XYZ")
-    await service.motion_control_feature.home(axes="XYZ")
+    logger.info("Homing XYZA")
+    await service.motion_control_feature.home(axes="XYZA")
     logger.info("Homing complete")
 
 

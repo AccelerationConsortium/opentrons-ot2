@@ -153,8 +153,9 @@ class CalibrationFeature(sila.Feature):
         Raises:
             RuntimeError: If not running in with_robot_server mode (hw_api unavailable).
         """
-        from opentrons.hardware_control.types import Axis as OTAxis, CriticalPoint
-        from opentrons.types import Mount
+        from opentrons.hardware_control.motion_utilities import deck_from_machine
+        from opentrons.hardware_control.types import Axis as OTAxis
+        from opentrons.types import Mount, Point
 
         hw_api = self._controller._hw_api
         if hw_api is None:
@@ -163,16 +164,36 @@ class CalibrationFeature(sila.Feature):
                 "the HardwareAPI is not available in standalone connector mode."
             )
 
-        # Machine A position (right mount) from the Smoothie driver cache.
-        machine_a = self._controller.position.get("A", 0.0)
+        # Machine positions from the Smoothie driver cache (populated after homing).
+        # hw_api.current_position() is intentionally avoided here: it requires the
+        # hw_api's own homed-flags to be set, which they are not when homing was done
+        # via the SiLA motion_control_feature (which calls the SmoothieDriver directly
+        # rather than through the HardwareAPI's own home() path).
+        pos = self._controller.position
+        machine_a = pos.get("A", 0.0)
 
-        # Deck position of the right nozzle. current_position applies the full
-        # calibration stack: deck attitude matrix + pipette offset + nozzle geometry.
-        nozzle_deck_pos = await hw_api.current_position(Mount.RIGHT, critical_point=CriticalPoint.NOZZLE)
-        nozzle_deck_z = nozzle_deck_pos.get(OTAxis.Z_R, 0.0)
+        # Deck attitude matrix from stored calibration.
+        attitude = hw_api.robot_calibration.deck_calibration.attitude
 
-        # When nozzle_deck_z = 0, machine_a = machine_a - nozzle_deck_z.
-        calibrated_nozzle_deck_a = machine_a - nozzle_deck_z
+        # Convert the current machine position to deck coordinates for the right mount.
+        # deck_from_machine applies the inverse attitude transform — no homed-flag check.
+        mount_deck = deck_from_machine(
+            {OTAxis.X: pos.get("X", 0.0), OTAxis.Y: pos.get("Y", 0.0), OTAxis.Z_R: machine_a},
+            attitude,
+            Point(0, 0, 0),
+            "OT-2 Standard",
+        )
+        mount_deck_z = mount_deck[Mount.RIGHT].z
+
+        # Nozzle offset: distance from mount to nozzle end in deck Z (positive = below mount).
+        # Read from the pipette model spec for the attached right pipette.
+        nozzle_offset_z = await self._read_nozzle_offset_z()
+
+        # Nozzle deck Z = mount deck Z - nozzle_offset_z
+        # calibrated_nozzle_deck_a = machine A when nozzle is at deck Z=0
+        #   = machine_a - nozzle_deck_z_current
+        #   = machine_a - (mount_deck_z - nozzle_offset_z)
+        calibrated_nozzle_deck_a = machine_a - (mount_deck_z - nozzle_offset_z)
 
         # Tip length from the opentrons_96_tiprack_300ul labware definition.
         versions = sorted(_TIPRACK_300UL_DIR.glob("*.json"), key=lambda p: int(p.stem))
@@ -183,3 +204,40 @@ class CalibrationFeature(sila.Feature):
             nozzle_deck_a=calibrated_nozzle_deck_a,
             tip_length_mm=tip_length_mm,
         )
+
+    async def _read_nozzle_offset_z(self) -> float:
+        """
+        Return the nozzle offset Z (mm) for the attached right-mount pipette.
+
+        Reads the model string from the pipette EEPROM, then looks up the
+        nozzleOffset[2] value from the opentrons pipette model spec. This is
+        the distance from the mount carriage to the nozzle end in the downward
+        direction (positive = below mount in deck coordinates).
+
+        Falls back to the P300 multi gen2 value (35.52 mm) if the model is
+        unreadable or not found.
+        """
+        _FALLBACK_NOZZLE_OFFSET_Z = 35.52  # P300 multi gen2 (v2.0 / v2.1)
+
+        model = await self._controller.read_pipette_model("A")
+        if not model:
+            return _FALLBACK_NOZZLE_OFFSET_Z
+
+        # Model strings are like "p300_multi_v2.0"; specs are keyed the same way.
+        import opentrons_shared_data
+        from pathlib import Path as _Path
+
+        specs_path = (
+            _Path(opentrons_shared_data.__file__).parent
+            / "data"
+            / "pipette"
+            / "definitions"
+            / "1"
+            / "pipetteModelSpecs.json"
+        )
+        try:
+            specs = json.loads(specs_path.read_text())
+            offset = specs["config"][model]["nozzleOffset"]
+            return float(offset[2])  # Z component
+        except (KeyError, IndexError, ValueError):
+            return _FALLBACK_NOZZLE_OFFSET_Z
