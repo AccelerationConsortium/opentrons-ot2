@@ -58,8 +58,11 @@ async def get_calibration_step(service) -> tuple[float, float]:
     """
     logger = get_logger()
     cal = await service.calibration_feature.get_right_mount_calibration()
-    logger.info(f"Calibration: nozzle_deck_a={cal['nozzle_deck_a']:.2f} mm, tip_length={cal['tip_length_mm']:.2f} mm")
-    return cal["nozzle_deck_a"], cal["tip_length_mm"]
+    # CDK serialises snake_case dataclass fields to PascalCase dict keys
+    nozzle_deck_a = cal["NozzleDeckA"]
+    tip_length_mm = cal["TipLengthMm"]
+    logger.info(f"Calibration: nozzle_deck_a={nozzle_deck_a:.2f} mm, tip_length={tip_length_mm:.2f} mm")
+    return nozzle_deck_a, tip_length_mm
 
 
 @task(name="Step: Setup Deck", log_prints=True)

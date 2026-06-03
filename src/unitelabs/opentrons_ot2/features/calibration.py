@@ -219,7 +219,7 @@ class CalibrationFeature(sila.Feature):
         """
         _FALLBACK_NOZZLE_OFFSET_Z = 35.52  # P300 multi gen2 (v2.0 / v2.1)
 
-        model = await self._controller.read_pipette_model("A")
+        model = await self._controller.read_pipette_model("right")
         if not model:
             return _FALLBACK_NOZZLE_OFFSET_Z
 
