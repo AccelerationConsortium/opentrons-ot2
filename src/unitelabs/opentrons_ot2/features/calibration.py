@@ -155,7 +155,7 @@ class CalibrationFeature(sila.Feature):
         """
         from opentrons.hardware_control.motion_utilities import deck_from_machine
         from opentrons.hardware_control.types import Axis as OTAxis
-        from opentrons.types import Mount, Point
+        from opentrons.types import Point
 
         hw_api = self._controller._hw_api
         if hw_api is None:
@@ -183,7 +183,7 @@ class CalibrationFeature(sila.Feature):
             Point(0, 0, 0),
             "OT-2 Standard",
         )
-        mount_deck_z = mount_deck[Mount.RIGHT].z
+        mount_deck_z = mount_deck[OTAxis.Z_R]
 
         # Nozzle offset: distance from mount to nozzle end in deck Z (positive = below mount).
         # Read from the pipette model spec for the attached right pipette.
