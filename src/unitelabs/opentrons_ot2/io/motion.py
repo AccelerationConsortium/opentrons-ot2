@@ -11,26 +11,64 @@ Uses:
 """
 
 import asyncio
+import ctypes
 import logging
+import math
 from pathlib import Path
 
 # Import Opentrons driver components
 from opentrons.config.robot_configs import load_ot2
 from opentrons.hardware_control import HardwareControlAPI
 from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
-from opentrons.drivers.smoothie_drivers.constants import (
-    AXES,
-    SMOOTHIE_COMMAND_TERMINATOR,
-)
-from opentrons.drivers.command_builder import CommandBuilder
+from opentrons.drivers.smoothie_drivers.constants import AXES
 from opentrons.drivers.smoothie_drivers.errors import SmoothieAlarm, SmoothieError
 from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
 
 from .hardware_proxy import _TimedLock
 
+# ALSA constants and library handle for play_tone.
+# libasound.so.2 is only present on the OT-2 (Linux/ARM); None on other platforms.
+try:
+    _libasound = ctypes.CDLL("libasound.so.2")
+except OSError:
+    _libasound = None
+_SND_PCM_FORMAT_S16_LE = 2
+_SND_PCM_ACCESS_RW_INTERLEAVED = 3
+_SND_PCM_STREAM_PLAYBACK = 0
+_ALSA_SAMPLE_RATE = 44100
 
 log = logging.getLogger(__name__)
+
+
+def _play_pcm_blocking(pcm: ctypes.Array, n_samples: int) -> None:
+    """Write a signed 16-bit mono PCM buffer to ALSA hw:0,0 (blocking)."""
+    if _libasound is None:
+        msg = "libasound.so.2 not available on this platform"
+        raise RuntimeError(msg)
+    handle = ctypes.c_void_p()
+    if _libasound.snd_pcm_open(ctypes.byref(handle), b"hw:0,0", _SND_PCM_STREAM_PLAYBACK, 0) < 0:
+        msg = "snd_pcm_open failed"
+        raise RuntimeError(msg)
+    try:
+        if (
+            _libasound.snd_pcm_set_params(
+                handle,
+                ctypes.c_int(_SND_PCM_FORMAT_S16_LE),
+                ctypes.c_int(_SND_PCM_ACCESS_RW_INTERLEAVED),
+                ctypes.c_uint(1),
+                ctypes.c_uint(_ALSA_SAMPLE_RATE),
+                ctypes.c_int(1),
+                ctypes.c_uint(500_000),
+            )
+            < 0
+        ):
+            msg = "snd_pcm_set_params failed"
+            raise RuntimeError(msg)
+        _libasound.snd_pcm_writei(handle, pcm, ctypes.c_ulong(n_samples))
+        _libasound.snd_pcm_drain(handle)
+    finally:
+        _libasound.snd_pcm_close(handle)
 
 
 class _RaisingSmoothieDriver(SmoothieDriver):
@@ -501,15 +539,20 @@ class OT2MotionController:
         await self._driver.disconnect()
 
     async def play_tone(self, frequency_hz: float, duration_ms: float) -> None:
-        """Play a single tone through the Smoothie buzzer (M300)."""
-        cmd = (
-            CommandBuilder(terminator=SMOOTHIE_COMMAND_TERMINATOR)
-            .add_gcode("M300")
-            .add_float("S", frequency_hz, precision=1)
-            .add_int("P", int(duration_ms))
+        """
+        Play a single tone through the OT-2 speaker via libasound (ALSA hw:0,0).
+
+        The Smoothie M300 G-code is accepted by the firmware but no buzzer is
+        wired to it on the OT-2. Audio goes through the Raspberry Pi bcm2835
+        output (hw:0,0), kept enabled by the opentrons GPIO driver at startup.
+        snd_pcm_writei blocks so we run it in a thread executor.
+        """
+        n_samples = int(_ALSA_SAMPLE_RATE * duration_ms / 1000.0)
+        pcm = (ctypes.c_int16 * n_samples)(
+            *(int(32767 * math.sin(2 * math.pi * frequency_hz * i / _ALSA_SAMPLE_RATE)) for i in range(n_samples))
         )
-        async with self._lock:
-            await self._driver._send_command(cmd)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _play_pcm_blocking, pcm, n_samples)
 
     async def reset_from_error(self) -> None:
         """Clear alarm lock state (M999)."""
