@@ -20,7 +20,9 @@ from opentrons.hardware_control import HardwareControlAPI
 from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
 from opentrons.drivers.smoothie_drivers.constants import (
     AXES,
+    SMOOTHIE_COMMAND_TERMINATOR,
 )
+from opentrons.drivers.command_builder import CommandBuilder
 from opentrons.drivers.smoothie_drivers.errors import SmoothieAlarm, SmoothieError
 from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
@@ -497,6 +499,17 @@ class OT2MotionController:
     async def disconnect(self) -> None:
         """Disconnect from Smoothie."""
         await self._driver.disconnect()
+
+    async def play_tone(self, frequency_hz: float, duration_ms: float) -> None:
+        """Play a single tone through the Smoothie buzzer (M300)."""
+        cmd = (
+            CommandBuilder(terminator=SMOOTHIE_COMMAND_TERMINATOR)
+            .add_gcode("M300")
+            .add_float("S", frequency_hz, precision=1)
+            .add_int("P", int(duration_ms))
+        )
+        async with self._lock:
+            await self._driver._send_command(cmd)
 
     async def reset_from_error(self) -> None:
         """Clear alarm lock state (M999)."""

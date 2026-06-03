@@ -1,9 +1,46 @@
 #!/bin/sh
-# Switch the OT-2 between Opentrons robot server and the SiLA2 connector.
-# Stops the current mode first to release GPIO lines and the serial port
-# (/dev/ttyAMA0 to the Smoothie motion controller), then starts the target.
+# Switch the OT-2 between two operating modes.
 #
-# Usage: sh scripts/switch_mode.sh <host> <connector|opentrons>
+# Usage:
+#   sh scripts/switch_mode.sh <host> <connector|opentrons>
+#
+# Modes
+# -----
+#   connector  (recommended)
+#       Runs the SiLA2 connector, which owns the hardware exclusively.
+#       The connector starts the opentrons HTTP robot-server IN-PROCESS,
+#       sharing one HardwareControlAPI so there is no serial port conflict.
+#       Both interfaces are available simultaneously after switching:
+#         - SiLA2 gRPC:             port 50051
+#         - opentrons HTTP API:     port 31950  (nginx -> /run/aiohttp.sock)
+#       All standard opentrons HTTP endpoints (/health, /pipettes, /runs, etc.)
+#       work exactly as they do under the original robot-server, because our
+#       connector injects the shared hardware into the robot-server app state
+#       before uvicorn starts.  The opentrons-robot-server systemd service is
+#       intentionally disabled in this mode; the sila2-connector service owns
+#       the hardware.
+#
+#   opentrons
+#       Runs only the original opentrons-robot-server (standalone).
+#       No SiLA2 interface is available.  Use this when you need direct access
+#       via the Opentrons app or other opentrons-native tooling without the
+#       SiLA2 layer.
+#
+# Persistence
+# -----------
+#   The switch enables/disables the relevant systemd units so the selected
+#   mode survives a reboot.  The OT-2 root filesystem is read-only; this
+#   script remounts it read-write before writing systemd enable/disable
+#   symlinks (the same pattern used by install_connector_service.sh).
+#
+# Hardware ownership
+# ------------------
+#   Both modes need exclusive access to:
+#     - /dev/ttyAMA0  (Smoothie motion controller)
+#     - GPIO lines    (owned via opentrons-gpio-setup / opentrons-status-leds)
+#   The script stops the current mode and waits for the serial port to be
+#   released before starting the next one.
+
 set -e
 
 HOST="${1:?Usage: $0 <host> <connector|opentrons>}"
@@ -32,7 +69,11 @@ if [ "\$CURRENT" = "$MODE" ]; then
     exit 0
 fi
 
-# Stop current mode first — GPIO lines and /dev/ttyAMA0 must be free before starting the next.
+# Remount root read-write so systemd enable/disable can write symlinks.
+mount -o remount,rw /
+
+# Stop current mode first — GPIO lines and /dev/ttyAMA0 must be free before
+# starting the next.
 echo ""
 echo "Stopping \$CURRENT..."
 case "\$CURRENT" in
@@ -73,6 +114,24 @@ sys.exit(0)
 done
 echo "Stopped. Serial port free."
 
+# Enable the target set and disable the outgoing set so the choice survives reboot.
+echo ""
+echo "Persisting mode selection..."
+case "$MODE" in
+    connector)
+        systemctl enable sila2-connector
+        for svc in opentrons-robot-server opentrons-status-leds opentrons-gpio-setup; do
+            systemctl disable "\$svc" 2>/dev/null || true
+        done
+        ;;
+    opentrons)
+        systemctl disable sila2-connector 2>/dev/null || true
+        for svc in opentrons-gpio-setup opentrons-status-leds opentrons-robot-server; do
+            systemctl enable "\$svc" 2>/dev/null || true
+        done
+        ;;
+esac
+
 # Start target mode and verify.
 echo ""
 echo "Starting $MODE..."
@@ -100,6 +159,9 @@ s.close()
         done
         echo " up."
         echo ""
+        echo "SiLA2 gRPC:         port 50051"
+        echo "opentrons HTTP API: port 31950 (via nginx -> /run/aiohttp.sock)"
+        echo ""
         systemctl status sila2-connector --no-pager
         ;;
     opentrons)
@@ -119,6 +181,8 @@ s.close()
             sleep 2
         done
         echo " up."
+        echo ""
+        echo "opentrons HTTP API: port 31950"
         echo ""
         systemctl status opentrons-robot-server --no-pager
         ;;

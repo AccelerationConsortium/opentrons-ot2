@@ -399,6 +399,21 @@ class MotionControlFeature(sila.Feature):
         return await self._controller.get_firmware_version()
 
     @sila.UnobservableCommand()
+    async def play_tone(
+        self,
+        frequency_hz: typing.Annotated[float, constraints.MinimalInclusive(0.0)],
+        duration_ms: typing.Annotated[float, constraints.MinimalInclusive(1.0)],
+    ) -> None:
+        """
+        Play a single tone through the Smoothie buzzer (M300).
+
+        Args:
+            frequency_hz: Tone frequency in Hz. 0 silences the buzzer.
+            duration_ms: Duration in milliseconds.
+        """
+        await self._controller.play_tone(frequency_hz, duration_ms)
+
+    @sila.UnobservableCommand()
     async def reset_from_error(self) -> HomedFlags:
         """Clear alarm lock state (M999). Returns homed flags after reset."""
         await self._controller.reset_from_error()
