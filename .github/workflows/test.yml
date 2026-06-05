@@ -129,6 +129,33 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
+          # Wait for SonarCloud to finish processing before querying
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -u "$SONAR_TOKEN:" \
+              "https://sonarcloud.io/api/qualitygates/project_status?projectKey=AccelerationConsortium_opentrons-ot2" \
+              | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('projectStatus',{}).get('status','NONE'))")
+            echo "Quality gate status: $STATUS"
+            if [ "$STATUS" != "NONE" ] && [ "$STATUS" != "IN_PROGRESS" ]; then break; fi
+            sleep 5
+          done
+
+          echo "=== Quality Gate Conditions ==="
+          curl -s -u "$SONAR_TOKEN:" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=AccelerationConsortium_opentrons-ot2" \
+            | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          ps = d.get('projectStatus', {})
+          print(f'Status: {ps.get(\"status\")}')
+          for c in ps.get('conditions', []):
+              status = c['status']
+              metric = c['metricKey']
+              actual = c.get('actualValue', '?')
+              threshold = c.get('errorThreshold', '?')
+              print(f'  [{status}] {metric}: {actual} (threshold: {threshold})')
+          "
+
+          echo "=== Open Issues ==="
           curl -s -u "$SONAR_TOKEN:" \
             "https://sonarcloud.io/api/issues/search?projectKeys=AccelerationConsortium_opentrons-ot2&resolved=false&ps=100" \
             | python3 -c "
@@ -136,11 +163,11 @@ jobs:
           data = json.load(sys.stdin)
           total = data.get('total', 0)
           issues = data.get('issues', [])
-          print(f'=== SonarCloud Issues: {total} open ===')
+          print(f'Total: {total}')
           for i in issues:
               component = i.get('component', '').split(':')[-1]
               line = i.get('line', '?')
-              print(f'[{i[\"severity\"]}] {i[\"type\"]} | {component}:{line} | {i[\"message\"]}')
+              print(f'  [{i[\"severity\"]}] {i[\"type\"]} | {component}:{line} | {i[\"message\"]}')
           if total == 0:
-              print('No open issues.')
+              print('  No open issues.')
           "
