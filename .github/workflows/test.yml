@@ -123,3 +123,24 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
+
+      - name: Print SonarCloud issues
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          curl -s -u "$SONAR_TOKEN:" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=accelerationconsortium_opentrons-ot2&resolved=false&ps=100" \
+            | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          total = data.get('total', 0)
+          issues = data.get('issues', [])
+          print(f'=== SonarCloud Issues: {total} open ===')
+          for i in issues:
+              component = i.get('component', '').split(':')[-1]
+              line = i.get('line', '?')
+              print(f'[{i[\"severity\"]}] {i[\"type\"]} | {component}:{line} | {i[\"message\"]}')
+          if total == 0:
+              print('No open issues.')
+          "
