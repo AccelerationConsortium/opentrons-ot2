@@ -12,6 +12,7 @@ proxy or separate-process architecture.
 import asyncio
 import functools
 import inspect
+import typing
 
 from opentrons.hardware_control import HardwareControlAPI
 
@@ -71,7 +72,7 @@ class HardwareProxy:
         if inspect.isasyncgenfunction(attr):
 
             @functools.wraps(attr)
-            async def locked_gen(*args: object, **kwargs: object) -> object:
+            async def locked_gen(*args: object, **kwargs: object) -> typing.AsyncGenerator[object, None]:
                 async with self._lock:
                     async for item in attr(*args, **kwargs):
                         yield item
