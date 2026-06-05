@@ -130,7 +130,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           curl -s -u "$SONAR_TOKEN:" \
-            "https://sonarcloud.io/api/issues/search?projectKeys=accelerationconsortium_opentrons-ot2&resolved=false&ps=100" \
+            "https://sonarcloud.io/api/issues/search?projectKeys=AccelerationConsortium_opentrons-ot2&resolved=false&ps=100" \
             | python3 -c "
           import json, sys
           data = json.load(sys.stdin)
