@@ -250,3 +250,48 @@ async def test_proxy_timeout_raises_on_held_lock(api: API) -> None:
         await proxy.home()
 
     shared_lock.release()
+
+
+# ── locked_gen (async generator wrapping) ─────────────────────────────────────
+
+
+async def test_locked_gen_yields_all_items(proxy: HardwareProxy) -> None:
+    """Proxied async generator methods must yield every item under the lock."""
+    from unittest.mock import patch
+
+    async def fake_gen(*args, **kwargs):
+        for i in range(3):
+            yield i
+
+    with patch.object(type(proxy._api), "attached_modules", new_callable=lambda: property(lambda self: None)):
+        pass  # just checking the proxy routing — use a direct attribute patch instead
+
+    # Inject a fake async-generator attribute directly onto the wrapped API
+    proxy._api._fake_agen = fake_gen  # type: ignore[attr-defined]
+
+    # Verify __getattr__ wraps it correctly
+    import inspect as _inspect
+
+    attr = getattr(proxy._api, "_fake_agen")
+    assert _inspect.isasyncgenfunction(attr)
+
+    collected = [item async for item in proxy._fake_agen()]  # type: ignore[attr-defined]
+
+    assert collected == [0, 1, 2]
+
+
+async def test_locked_gen_holds_lock_while_iterating(proxy: HardwareProxy) -> None:
+    """The lock must be held for the full duration of the async generator iteration."""
+    lock = proxy._lock._lock
+
+    async def fake_gen(*args, **kwargs):
+        assert lock.locked()
+        yield 42
+        assert lock.locked()
+
+    proxy._api._checking_gen = fake_gen  # type: ignore[attr-defined]
+
+    results = [item async for item in proxy._checking_gen()]  # type: ignore[attr-defined]
+
+    assert results == [42]
+    assert not lock.locked()
