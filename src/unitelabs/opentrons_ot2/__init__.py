@@ -207,14 +207,16 @@ async def _create_app_with_robot_server(
 
     if config.use_simulator:
         log.info("Building shared HardwareControlAPI (simulator)")
-        real_api = await API.build_hardware_simulator()
+        shared_hardware = await API.build_hardware_simulator()
     else:
         log.info("Building shared HardwareControlAPI on %s", config.serial_port)
-        real_api = await API.build_hardware_controller(port=config.serial_port)
+        shared_hardware = await API.build_hardware_controller(port=config.serial_port)
 
     shared_lock = asyncio.Lock()
-    proxy = HardwareProxy(real_api, lock=shared_lock, lock_timeout_s=config.lock_timeout_s)
-    motion_controller = OT2MotionController.from_api(real_api, lock=shared_lock, lock_timeout_s=config.lock_timeout_s)
+    proxy = HardwareProxy(shared_hardware, lock=shared_lock, lock_timeout_s=config.lock_timeout_s)
+    motion_controller = OT2MotionController.from_api(
+        shared_hardware, lock=shared_lock, lock_timeout_s=config.lock_timeout_s
+    )
 
     # Pre-populate robot_server app state before uvicorn starts its lifespan.
     # start_initializing_hardware() skips hardware init when initialize_task is not None,
@@ -252,34 +254,35 @@ async def _create_app_with_robot_server(
     if config.robot_server_tcp_port is None:
         log.info("robot-server starting on %s", config.robot_server_uds)
 
-    # Build SiLA connector (modules same as standalone path)
+    # Build SiLA connector. Motion/pipette/calibration features share the motion
+    # controller; module features wrap the shared hardware's attached modules (below).
     connector = Connector(config)
     connector.register(MotionControlFeature(motion_controller))
     connector.register(PipetteFeature(motion_controller))
     connector.register(CalibrationFeature(motion_controller))
 
-    module_controllers = []
-    module_ports = scan_module_ports()
+    # Modules are owned by the shared HardwareControlAPI, which opened their serial
+    # ports during build_hardware_controller() (an initial scan runs synchronously,
+    # so attached_modules is already populated here). Wrap those same module objects
+    # rather than opening the ttys a second time — each module's own poller serialises
+    # concurrent callers, so SiLA and the HTTP /modules API cannot collide on the wire.
+    from opentrons.hardware_control.modules.types import ModuleType
 
-    if "heater_shaker" in module_ports:
-        hs = await HeaterShakerController.build(port=module_ports["heater_shaker"])
-        connector.register(HeaterShakerFeature(hs))
-        module_controllers.append(hs)
+    module_factories = {
+        ModuleType.HEATER_SHAKER: (HeaterShakerController, HeaterShakerFeature),
+        ModuleType.THERMOCYCLER: (ThermocyclerController, ThermocyclerFeature),
+        ModuleType.TEMPERATURE: (TemperatureModuleController, TemperatureModuleFeature),
+        ModuleType.MAGNETIC: (MagneticModuleController, MagneticModuleFeature),
+    }
 
-    if "thermocycler" in module_ports:
-        tc = await ThermocyclerController.build(port=module_ports["thermocycler"])
-        connector.register(ThermocyclerFeature(tc))
-        module_controllers.append(tc)
-
-    if "temperature" in module_ports:
-        temp = await TemperatureModuleController.build(port=module_ports["temperature"])
-        connector.register(TemperatureModuleFeature(temp))
-        module_controllers.append(temp)
-
-    if "magnetic" in module_ports:
-        mag = await MagneticModuleController.build(port=module_ports["magnetic"])
-        connector.register(MagneticModuleFeature(mag))
-        module_controllers.append(mag)
+    for module in shared_hardware.attached_modules:
+        factory = module_factories.get(module.MODULE_TYPE)
+        if factory is None:
+            log.info("Skipping unsupported module type %s", module.MODULE_TYPE.name)
+            continue
+        controller_cls, feature_cls = factory
+        connector.register(feature_cls(controller_cls.from_module(module)))
+        log.info("Registered SiLA feature for module %s", module.MODULE_TYPE.name)
 
     log.info(
         "SiLA server listening on %s:%d",
@@ -293,6 +296,6 @@ async def _create_app_with_robot_server(
     uv_server.should_exit = True
     await asyncio.gather(robot_server_task, return_exceptions=True)
 
-    for mc in module_controllers:
-        await mc.disconnect()
-    await real_api.clean_up()
+    # The shared HardwareControlAPI owns the modules it attached, so its clean_up()
+    # closes their serial ports — the module-backed controllers do not own them.
+    await shared_hardware.clean_up()
