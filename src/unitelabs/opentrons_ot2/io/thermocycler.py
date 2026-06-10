@@ -3,29 +3,24 @@
 import logging
 
 from opentrons.drivers.thermocycler.driver import ThermocyclerDriverV2
-from opentrons.hardware_control.modules import Thermocycler
 
+from ._module_base import ModuleControllerBase
 from ._types import Temperature
 
 log = logging.getLogger(__name__)
 
 
-class ThermocyclerController:
+class ThermocyclerController(ModuleControllerBase):
     """
     Controller for Thermocycler module.
 
-    Two backends are supported:
+    Two backends are supported (see ``ModuleControllerBase``):
 
     - ``build(port=...)`` wraps a low-level ``ThermocyclerDriverV2`` that owns the
       serial port directly (standalone connector mode).
     - ``from_module(module)`` wraps the high-level ``Thermocycler`` object already
-      attached to a shared ``HardwareControlAPI`` (in-process robot-server mode),
-      avoiding a second open of the module's serial port.
+      attached to a shared ``HardwareControlAPI`` (in-process robot-server mode).
     """
-
-    def __init__(self, driver: ThermocyclerDriverV2 | None = None, module: Thermocycler | None = None):
-        self._driver = driver
-        self._module = module
 
     @classmethod
     async def build(cls, port: str) -> "ThermocyclerController":
@@ -41,22 +36,6 @@ class ThermocyclerController:
         driver = await ThermocyclerDriverV2.create(port=port, loop=None)
         await driver.connect()
         return cls(driver=driver)
-
-    @classmethod
-    def from_module(cls, module: Thermocycler) -> "ThermocyclerController":
-        """Build a controller backed by a module already attached to a shared HardwareControlAPI."""
-        return cls(module=module)
-
-    async def disconnect(self) -> None:
-        """Disconnect from the module. No-op when backed by a shared module (the API owns it)."""
-        if self._module is None:
-            await self._driver.disconnect()
-
-    async def is_connected(self) -> bool:
-        """Check connection status."""
-        if self._module is not None:
-            return True
-        return await self._driver.is_connected()
 
     async def open_lid(self) -> None:
         """Open the lid."""
@@ -146,9 +125,3 @@ class ThermocyclerController:
             await self._module.deactivate()
         else:
             await self._driver.deactivate_all()
-
-    async def get_device_info(self) -> dict:
-        """Get device serial, model, version."""
-        if self._module is not None:
-            return dict(self._module.device_info)
-        return await self._driver.get_device_info()

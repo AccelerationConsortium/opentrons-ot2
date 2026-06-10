@@ -4,29 +4,24 @@ import logging
 
 from opentrons.drivers.heater_shaker.driver import HeaterShakerDriver
 from opentrons.drivers.heater_shaker.abstract import HeaterShakerLabwareLatchStatus
-from opentrons.hardware_control.modules import HeaterShaker
 
+from ._module_base import ModuleControllerBase
 from ._types import RPM, Temperature
 
 log = logging.getLogger(__name__)
 
 
-class HeaterShakerController:
+class HeaterShakerController(ModuleControllerBase):
     """
     Controller for Heater-Shaker module.
 
-    Two backends are supported:
+    Two backends are supported (see ``ModuleControllerBase``):
 
     - ``build(port=...)`` wraps a low-level ``HeaterShakerDriver`` that owns the
       serial port directly (standalone connector mode).
     - ``from_module(module)`` wraps the high-level ``HeaterShaker`` object already
-      attached to a shared ``HardwareControlAPI`` (in-process robot-server mode),
-      avoiding a second open of the module's serial port.
+      attached to a shared ``HardwareControlAPI`` (in-process robot-server mode).
     """
-
-    def __init__(self, driver: HeaterShakerDriver | None = None, module: HeaterShaker | None = None):
-        self._driver = driver
-        self._module = module
 
     @classmethod
     async def build(cls, port: str) -> "HeaterShakerController":
@@ -42,22 +37,6 @@ class HeaterShakerController:
         driver = await HeaterShakerDriver.create(port=port, loop=None)
         await driver.connect()
         return cls(driver=driver)
-
-    @classmethod
-    def from_module(cls, module: HeaterShaker) -> "HeaterShakerController":
-        """Build a controller backed by a module already attached to a shared HardwareControlAPI."""
-        return cls(module=module)
-
-    async def disconnect(self) -> None:
-        """Disconnect from the module. No-op when backed by a shared module (the API owns it)."""
-        if self._module is None:
-            await self._driver.disconnect()
-
-    async def is_connected(self) -> bool:
-        """Check connection status."""
-        if self._module is not None:
-            return True
-        return await self._driver.is_connected()
 
     async def set_temperature(self, temperature: float) -> None:
         """Set target temperature in Celsius (does not wait for the target to be reached)."""
@@ -120,9 +99,3 @@ class HeaterShakerController:
         if self._module is not None:
             return self._module.labware_latch_status
         return await self._driver.get_labware_latch_status()
-
-    async def get_device_info(self) -> dict:
-        """Get device serial, model, version."""
-        if self._module is not None:
-            return dict(self._module.device_info)
-        return await self._driver.get_device_info()
