@@ -98,6 +98,16 @@ class _RaisingSmoothieDriver(SmoothieDriver):
 # Default port on OT-2
 DEFAULT_SMOOTHIE_PORT = "/dev/ttyAMA0"
 
+# Plunger axes (left=B, right=C) home at their *active* current. The OT-2 robot
+# config default for plungers is 0.05 A (idle/holding level) — too little torque
+# to drive the plunger to its endstop, so a bare ``G28.2 B``/``C`` returns
+# "Homing fail". Opentrons' own home raises the plunger to the attached pipette's
+# run current first (see HardwareControlAPI._do_plunger_home), then homes it
+# separately from the gantry. We mirror that, falling back to this default when
+# no pipette run current is available (e.g. standalone mode without a HardwareAPI).
+_PLUNGER_AXES = "BC"
+_DEFAULT_PLUNGER_HOME_CURRENT_AMPS = 0.5
+
 
 class OT2MotionController:
     """
@@ -278,14 +288,59 @@ class OT2MotionController:
         - Unstick moves for plunger axes
         - Proper X/Y sequencing with backoff
 
+        Plunger axes (B, C) are homed individually at the attached pipette's run
+        current (or a safe default), separately from the gantry/mounts — the bare
+        driver would otherwise home them at the 0.05 A idle current, which lacks
+        the torque to reach the endstop and fails with "Homing fail".
+
         Args:
             axes: String of axes to home (e.g., "XYZABC" or "ZA").
 
         Returns:
             Dict of axis positions after homing.
         """
+        plunger_axes = [ax for ax in axes if ax in _PLUNGER_AXES]
+        other_axes = "".join(ax for ax in axes if ax not in _PLUNGER_AXES)
         async with self._lock:
-            return await self._driver.home(axis=axes)
+            position: dict[str, float] = {}
+            # Home gantry + mounts together first (their default currents are adequate),
+            # then each plunger on its own at an adequate current — matching the
+            # sequence in opentrons HardwareControlAPI.home().
+            if other_axes:
+                position = await self._driver.home(axis=other_axes)
+            for ax in plunger_axes:
+                position = await self._home_plunger(ax)
+            return position
+
+    async def _home_plunger(self, axis: str) -> dict[str, float]:
+        """Home a single plunger axis at an adequate current, restoring the prior current after."""
+        home_current = self._plunger_home_current(axis)
+        previous_current = self._driver.current.get(axis)
+        self._driver.set_active_current({axis: home_current})
+        try:
+            return await self._driver.home(axis=axis)
+        finally:
+            if previous_current is not None:
+                self._driver.set_active_current({axis: previous_current})
+
+    def _plunger_home_current(self, axis: str) -> float:
+        """Run current for a plunger home: the attached pipette's run current if known, else a default."""
+        if self._hw_api is not None:
+            try:
+                from opentrons.types import Mount
+
+                mount = Mount.LEFT if axis == "B" else Mount.RIGHT
+                instrument = self._hw_api.hardware_instruments.get(mount)
+                if instrument is not None:
+                    return float(instrument.plunger_motor_current.run)
+            except Exception:  # noqa: BLE001 — any lookup failure falls back to the safe default current
+                log.warning(
+                    "Could not read pipette run current for axis %s; using default %.2f A",
+                    axis,
+                    _DEFAULT_PLUNGER_HOME_CURRENT_AMPS,
+                    exc_info=True,
+                )
+        return _DEFAULT_PLUNGER_HOME_CURRENT_AMPS
 
     async def move(
         self,
