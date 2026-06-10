@@ -34,6 +34,8 @@ external TCP port 31950 to that socket — so the HTTP API is reachable at
 
 ## Getting Started
 
+For a general introduction to connector development with the UniteLabs CDK, see the [connector development documentation](https://docs.unitelabs.io/connector-development).
+
 ### Prerequisites
 
 Ensure that [uv](https://docs.astral.sh/uv/) is installed on your system. You can install it with:
