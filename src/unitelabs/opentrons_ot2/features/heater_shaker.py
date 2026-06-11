@@ -1,5 +1,6 @@
 """SiLA2 feature for Heater-Shaker module control."""
 
+import enum
 import typing
 from dataclasses import dataclass
 
@@ -15,6 +16,17 @@ _TempCelsius = typing.Annotated[float, constraints.MinimalInclusive(0.0), constr
 _Rpm = typing.Annotated[int, constraints.MinimalInclusive(0), constraints.MaximalInclusive(3000)]
 
 
+class LatchStatus(enum.Enum):
+    """Heater-shaker labware latch position (mirrors opentrons HeaterShakerLabwareLatchStatus)."""
+
+    OPENING = "opening"
+    IDLE_OPEN = "idle_open"
+    CLOSING = "closing"
+    IDLE_CLOSED = "idle_closed"
+    IDLE_UNKNOWN = "idle_unknown"
+    UNKNOWN = "unknown"
+
+
 @dataclass
 class HeaterShakerStatus:
     """Current status of heater-shaker module."""
@@ -23,7 +35,7 @@ class HeaterShakerStatus:
     temperature_target: float | None
     rpm_current: int
     rpm_target: int | None
-    latch_status: str
+    latch_status: LatchStatus
 
 
 class HeaterShakerFeature(sila.Feature):
@@ -119,7 +131,7 @@ class HeaterShakerFeature(sila.Feature):
         return await self._controller.get_rpm()
 
     @sila.UnobservableCommand()
-    async def open_latch(self) -> str:
+    async def open_latch(self) -> LatchStatus:
         """
         Open the labware latch.
 
@@ -128,10 +140,10 @@ class HeaterShakerFeature(sila.Feature):
         """
         await self._controller.open_latch()
         status = await self._controller.get_latch_status()
-        return status.value
+        return LatchStatus(status.value)
 
     @sila.UnobservableCommand()
-    async def close_latch(self) -> str:
+    async def close_latch(self) -> LatchStatus:
         """
         Close the labware latch.
 
@@ -140,10 +152,10 @@ class HeaterShakerFeature(sila.Feature):
         """
         await self._controller.close_latch()
         status = await self._controller.get_latch_status()
-        return status.value
+        return LatchStatus(status.value)
 
     @sila.UnobservableCommand()
-    async def get_latch_status(self) -> str:
+    async def get_latch_status(self) -> LatchStatus:
         """
         Get the current latch status.
 
@@ -151,7 +163,7 @@ class HeaterShakerFeature(sila.Feature):
             Latch status (idle_open, idle_closed, opening, closing, etc.).
         """
         status = await self._controller.get_latch_status()
-        return status.value
+        return LatchStatus(status.value)
 
     @sila.UnobservableCommand()
     async def get_status(self) -> HeaterShakerStatus:
@@ -170,7 +182,7 @@ class HeaterShakerFeature(sila.Feature):
             temperature_target=temp.target,
             rpm_current=rpm.current,
             rpm_target=rpm.target,
-            latch_status=latch.value,
+            latch_status=LatchStatus(latch.value),
         )
 
     @sila.UnobservableCommand()

@@ -1,5 +1,6 @@
 """SiLA2 feature for Thermocycler module control."""
 
+import enum
 import typing
 from dataclasses import dataclass
 
@@ -13,6 +14,16 @@ _BlockCelsius = typing.Annotated[float, constraints.MinimalInclusive(4.0), const
 _LidCelsius = typing.Annotated[float, constraints.MinimalInclusive(37.0), constraints.MaximalInclusive(110.0)]
 
 
+class LidStatus(enum.Enum):
+    """Thermocycler lid position (mirrors opentrons ThermocyclerLidStatus)."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+    IN_BETWEEN = "in_between"
+    UNKNOWN = "unknown"
+    MAX = "max"
+
+
 @dataclass
 class ThermocyclerStatus:
     """Current status of thermocycler module."""
@@ -21,7 +32,7 @@ class ThermocyclerStatus:
     lid_temperature_target: float | None
     plate_temperature_current: float
     plate_temperature_target: float | None
-    lid_status: str
+    lid_status: LidStatus
 
 
 class ThermocyclerFeature(sila.Feature):
@@ -47,7 +58,7 @@ class ThermocyclerFeature(sila.Feature):
     # ============ Lid Control ============
 
     @sila.UnobservableCommand()
-    async def open_lid(self) -> str:
+    async def open_lid(self) -> LidStatus:
         """
         Open the thermocycler lid.
 
@@ -55,10 +66,10 @@ class ThermocyclerFeature(sila.Feature):
             Lid status after opening.
         """
         await self._controller.open_lid()
-        return await self._controller.get_lid_status()
+        return LidStatus(await self._controller.get_lid_status())
 
     @sila.UnobservableCommand()
-    async def close_lid(self) -> str:
+    async def close_lid(self) -> LidStatus:
         """
         Close the thermocycler lid.
 
@@ -66,17 +77,17 @@ class ThermocyclerFeature(sila.Feature):
             Lid status after closing.
         """
         await self._controller.close_lid()
-        return await self._controller.get_lid_status()
+        return LidStatus(await self._controller.get_lid_status())
 
     @sila.UnobservableCommand()
-    async def get_lid_status(self) -> str:
+    async def get_lid_status(self) -> LidStatus:
         """
         Get the current lid status.
 
         Returns:
             Lid status (open, closed, in_between, unknown).
         """
-        return await self._controller.get_lid_status()
+        return LidStatus(await self._controller.get_lid_status())
 
     # ============ Temperature Control ============
 
@@ -184,7 +195,7 @@ class ThermocyclerFeature(sila.Feature):
         """
         lid_temp = await self._controller.get_lid_temperature()
         plate_temp = await self._controller.get_plate_temperature()
-        lid_status = await self._controller.get_lid_status()
+        lid_status = LidStatus(await self._controller.get_lid_status())
 
         return ThermocyclerStatus(
             lid_temperature_current=lid_temp.current,
