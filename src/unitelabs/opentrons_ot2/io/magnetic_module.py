@@ -4,19 +4,27 @@ import logging
 
 from opentrons.drivers.mag_deck.driver import MagDeckDriver
 
+from ._module_base import ModuleControllerBase
+
 log = logging.getLogger(__name__)
 
 
-class MagneticModuleController:
-    """Controller for Magnetic Module using Opentrons driver."""
+class MagneticModuleController(ModuleControllerBase):
+    """
+    Controller for Magnetic Module.
 
-    def __init__(self, driver: MagDeckDriver):
-        self._driver = driver
+    Two backends are supported (see ``ModuleControllerBase``):
+
+    - ``build(port=...)`` wraps a low-level ``MagDeckDriver`` that owns the serial
+      port directly (standalone connector mode).
+    - ``from_module(module)`` wraps the high-level ``MagDeck`` object already
+      attached to a shared ``HardwareControlAPI`` (in-process robot-server mode).
+    """
 
     @classmethod
     async def build(cls, port: str) -> "MagneticModuleController":
         """
-        Build a MagneticModuleController.
+        Build a controller that owns the serial port via a low-level driver.
 
         Args:
             port: Serial port path.
@@ -28,14 +36,6 @@ class MagneticModuleController:
         await driver.connect()
         return cls(driver=driver)
 
-    async def disconnect(self) -> None:
-        """Disconnect from the module."""
-        await self._driver.disconnect()
-
-    async def is_connected(self) -> bool:
-        """Check connection status."""
-        return await self._driver.is_connected()
-
     async def engage(self, height: float) -> None:
         """
         Engage magnets at specified height.
@@ -43,16 +43,20 @@ class MagneticModuleController:
         Args:
             height: Height from home in mm.
         """
-        await self._driver.engage(height=height)
+        if self._module is not None:
+            await self._module.engage(height=height)
+        else:
+            await self._driver.engage(height=height)
 
     async def disengage(self) -> None:
         """Disengage magnets (lower to home)."""
-        await self._driver.disengage()
+        if self._module is not None:
+            await self._module.deactivate()
+        else:
+            await self._driver.disengage()
 
     async def get_mag_position(self) -> float:
         """Get current magnet position in mm."""
+        if self._module is not None:
+            return self._module.current_height
         return await self._driver.get_mag_position()
-
-    async def get_device_info(self) -> dict:
-        """Get device serial, model, version."""
-        return await self._driver.get_device_info()

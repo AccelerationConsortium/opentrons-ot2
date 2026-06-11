@@ -4,21 +4,28 @@ import logging
 
 from opentrons.drivers.thermocycler.driver import ThermocyclerDriverV2
 
+from ._module_base import ModuleControllerBase
 from ._types import Temperature
 
 log = logging.getLogger(__name__)
 
 
-class ThermocyclerController:
-    """Controller for Thermocycler module using Opentrons driver."""
+class ThermocyclerController(ModuleControllerBase):
+    """
+    Controller for Thermocycler module.
 
-    def __init__(self, driver: ThermocyclerDriverV2):
-        self._driver = driver
+    Two backends are supported (see ``ModuleControllerBase``):
+
+    - ``build(port=...)`` wraps a low-level ``ThermocyclerDriverV2`` that owns the
+      serial port directly (standalone connector mode).
+    - ``from_module(module)`` wraps the high-level ``Thermocycler`` object already
+      attached to a shared ``HardwareControlAPI`` (in-process robot-server mode).
+    """
 
     @classmethod
     async def build(cls, port: str) -> "ThermocyclerController":
         """
-        Build a ThermocyclerController.
+        Build a controller that owns the serial port via a low-level driver.
 
         Args:
             port: Serial port path.
@@ -30,29 +37,32 @@ class ThermocyclerController:
         await driver.connect()
         return cls(driver=driver)
 
-    async def disconnect(self) -> None:
-        """Disconnect from the module."""
-        await self._driver.disconnect()
-
-    async def is_connected(self) -> bool:
-        """Check connection status."""
-        return await self._driver.is_connected()
-
     async def open_lid(self) -> None:
         """Open the lid."""
-        await self._driver.open_lid()
+        if self._module is not None:
+            await self._module.open()
+        else:
+            await self._driver.open_lid()
 
     async def close_lid(self) -> None:
         """Close the lid."""
-        await self._driver.close_lid()
+        if self._module is not None:
+            await self._module.close()
+        else:
+            await self._driver.close_lid()
 
     async def get_lid_status(self) -> str:
         """Get lid status (open/closed/in_between/unknown)."""
+        if self._module is not None:
+            return self._module.lid_status.name.lower()
         return (await self._driver.get_lid_status()).name.lower()
 
     async def set_lid_temperature(self, temperature: float) -> None:
-        """Set lid temperature in Celsius."""
-        await self._driver.set_lid_temperature(temp=temperature)
+        """Set lid temperature in Celsius (does not wait for the target to be reached)."""
+        if self._module is not None:
+            await self._module.set_target_lid_temperature(temperature)
+        else:
+            await self._driver.set_lid_temperature(temp=temperature)
 
     async def set_plate_temperature(
         self,
@@ -61,41 +71,57 @@ class ThermocyclerController:
         volume: float | None = None,
     ) -> None:
         """
-        Set plate (block) temperature.
+        Set plate (block) temperature (does not wait for the target to be reached).
 
         Args:
             temperature: Target temperature in Celsius.
             hold_time: Optional hold time in seconds.
             volume: Optional sample volume in uL.
         """
-        await self._driver.set_plate_temperature(
-            temp=temperature,
-            hold_time=hold_time,
-            volume=volume,
-        )
+        if self._module is not None:
+            await self._module.set_target_block_temperature(
+                temperature,
+                hold_time_seconds=hold_time,
+                volume=volume,
+            )
+        else:
+            await self._driver.set_plate_temperature(
+                temp=temperature,
+                hold_time=hold_time,
+                volume=volume,
+            )
 
     async def get_lid_temperature(self) -> Temperature:
         """Get lid temperature."""
+        if self._module is not None:
+            return Temperature(current=self._module.lid_temp, target=self._module.lid_target)
         t = await self._driver.get_lid_temperature()
         return Temperature(current=t.current, target=t.target)
 
     async def get_plate_temperature(self) -> Temperature:
         """Get plate (block) temperature."""
+        if self._module is not None:
+            return Temperature(current=self._module.temperature, target=self._module.target)
         t = await self._driver.get_plate_temperature()
         return Temperature(current=t.current, target=t.target)
 
     async def deactivate_lid(self) -> None:
         """Turn off lid heater."""
-        await self._driver.deactivate_lid()
+        if self._module is not None:
+            await self._module.deactivate_lid()
+        else:
+            await self._driver.deactivate_lid()
 
     async def deactivate_block(self) -> None:
         """Turn off block heater/cooler."""
-        await self._driver.deactivate_block()
+        if self._module is not None:
+            await self._module.deactivate_block()
+        else:
+            await self._driver.deactivate_block()
 
     async def deactivate_all(self) -> None:
         """Turn off all heating/cooling."""
-        await self._driver.deactivate_all()
-
-    async def get_device_info(self) -> dict:
-        """Get device serial, model, version."""
-        return await self._driver.get_device_info()
+        if self._module is not None:
+            await self._module.deactivate()
+        else:
+            await self._driver.deactivate_all()

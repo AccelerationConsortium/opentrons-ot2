@@ -1,4 +1,12 @@
-"""End-to-end gRPC integration tests for CalibrationFeature in simulate mode."""
+"""End-to-end gRPC integration tests for CalibrationFeature.
+
+These exercise the calibration *write* commands (M92 steps/mm, M365 pipette
+config). They are marked ``simulator_only``: against a real robot they would
+write arbitrary values into the live Smoothie calibration and never restore it,
+corrupting homing/motion for the rest of the session (e.g. setting plunger
+steps/mm to 100 makes a later plunger home travel the wrong distance and fail).
+They verify command plumbing/encoding, which the simulator covers fully.
+"""
 
 import grpc
 import grpc.aio
@@ -47,31 +55,37 @@ async def client(sila_channel) -> _CalibrationClient:
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_update_steps_per_mm_single_axis(client: _CalibrationClient) -> None:
     await client.update_steps_per_mm([StepsPerMm(axis=Axis.X, steps_per_mm=80.0)])
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_update_steps_per_mm_all_axes(client: _CalibrationClient) -> None:
     updates = [StepsPerMm(axis=ax, steps_per_mm=100.0) for ax in Axis]
     await client.update_steps_per_mm(updates)
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_update_pipette_home_does_not_raise(client: _CalibrationClient) -> None:
     await client.update_pipette_home(Axis.Z, home_position_mm=220.0)
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_update_max_travel_does_not_raise(client: _CalibrationClient) -> None:
     await client.update_max_travel(Axis.B, max_travel_mm=30.0)
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_update_retract_distance_does_not_raise(client: _CalibrationClient) -> None:
     await client.update_retract_distance(Axis.B, retract_mm=2.0)
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_update_endstop_debounce_does_not_raise(client: _CalibrationClient) -> None:
     await client.update_endstop_debounce(debounce_mm=0.5)

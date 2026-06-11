@@ -1,0 +1,54 @@
+"""
+Shared base for module IO controllers.
+
+Each module controller wraps one of two backends:
+
+- a low-level driver that owns the serial port (via the subclass ``build``), or
+- a high-level opentrons module object already attached to a shared
+  ``HardwareControlAPI`` (via ``from_module``), whose own poller serialises
+  concurrent callers.
+
+The backend-agnostic plumbing — construction, connection state, and device
+info — lives here so the concrete controllers only implement the
+device-specific commands.
+"""
+
+import logging
+
+log = logging.getLogger(__name__)
+
+
+class ModuleControllerBase:
+    """
+    Common backend dispatch shared by all module controllers.
+
+    Exactly one of ``driver`` (a low-level serial driver) or ``module`` (a
+    high-level opentrons module object) is set; both are intentionally untyped
+    here since each subclass wraps a different concrete type.
+    """
+
+    def __init__(self, driver: object = None, module: object = None) -> None:
+        self._driver = driver
+        self._module = module
+
+    @classmethod
+    def from_module(cls, module: object) -> "ModuleControllerBase":
+        """Build a controller backed by a module already attached to a shared HardwareControlAPI."""
+        return cls(module=module)
+
+    async def disconnect(self) -> None:
+        """Disconnect from the module. No-op when backed by a shared module (the API owns it)."""
+        if self._module is None:
+            await self._driver.disconnect()
+
+    async def is_connected(self) -> bool:
+        """Check connection status."""
+        if self._module is not None:
+            return True
+        return await self._driver.is_connected()
+
+    async def get_device_info(self) -> dict:
+        """Get device serial, model, version."""
+        if self._module is not None:
+            return dict(self._module.device_info)
+        return await self._driver.get_device_info()

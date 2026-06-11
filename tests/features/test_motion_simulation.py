@@ -197,6 +197,70 @@ async def test_move_axis_within_bounds_does_not_raise(feature):
     await feature.move_axis(Axis.X, position=10.0)
 
 
+# ── Bounds: relative / aspirate / dispense ────────────────────────────────────
+# Simulator bounds: X<=418, Y<=370, Z/A<=218, B/C<=19; plungers home at 19 (=max).
+
+
+@pytest.mark.asyncio
+async def test_move_relative_axis_out_of_bounds_raises(homed_feature):
+    from unitelabs.opentrons_ot2.features.motion_control import OutOfBoundsError
+
+    # Homed X=418 is the max; a positive relative move exceeds the limit.
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.move_relative_axis(axis=Axis.X, delta=100.0)
+
+
+@pytest.mark.asyncio
+async def test_move_relative_axis_below_zero_raises(homed_feature):
+    from unitelabs.opentrons_ot2.features.motion_control import OutOfBoundsError
+
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.move_relative_axis(axis=Axis.X, delta=-9999.0)
+
+
+@pytest.mark.asyncio
+async def test_move_relative_axis_within_bounds_ok(homed_feature):
+    result = await homed_feature.move_relative_axis(axis=Axis.X, delta=-10.0)
+    assert result.x == pytest.approx(HOMED_POSITION["X"] - 10.0)
+
+
+@pytest.mark.asyncio
+async def test_aspirate_below_zero_raises(homed_feature):
+    from unitelabs.opentrons_ot2.features.motion_control import Mount, OutOfBoundsError
+
+    # Plunger B homed at 19; aspirating 40 mm worth of volume drives it below 0.
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=200.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
+
+
+@pytest.mark.asyncio
+async def test_aspirate_within_bounds_ok(homed_feature):
+    from unitelabs.opentrons_ot2.features.motion_control import Mount
+
+    # 50 uL / 5 (uL/mm) = 10 mm down from 19 → target 9, within [0, 19].
+    result = await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=50.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
+    assert result.b == pytest.approx(9.0)
+
+
+@pytest.mark.asyncio
+async def test_dispense_above_max_raises(homed_feature):
+    from unitelabs.opentrons_ot2.features.motion_control import Mount, OutOfBoundsError
+
+    # Plunger B homed at its max (19); any upward dispense exceeds the limit.
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.dispense(mount=Mount.LEFT, volume_ul=50.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
+
+
+@pytest.mark.asyncio
+async def test_dispense_within_bounds_ok(homed_feature):
+    from unitelabs.opentrons_ot2.features.motion_control import Mount
+
+    # Lower the plunger first, then dispense partway back up: 9 + 4 = 13, within [0, 19].
+    await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=50.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
+    result = await homed_feature.dispense(mount=Mount.LEFT, volume_ul=20.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
+    assert result.b == pytest.approx(13.0)
+
+
 # ── Board revision / serial / disengage ───────────────────────────────────────
 
 

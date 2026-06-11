@@ -24,7 +24,10 @@ from unitelabs.opentrons_ot2.features.motion_control import Axis, AxisPosition, 
 _PKG = "sila2.ca.accelerationconsortium.robots.motioncontrolfeature.v1"
 _SERVICE = f"{_PKG}.MotionControlFeature"
 
-HOMED_POSITION = AxisPosition(x=418.0, y=353.0, z=218.0, a=218.0, b=19.0, c=19.0)
+# The simulator reports nominal homed coordinates (Y=353), but a real robot
+# reports its firmware-queried homed position, which can differ slightly per
+# machine (e.g. Y=350). Position assertions therefore compare against the
+# `homed_position` fixture (captured live) rather than a hardcoded constant.
 
 T = typing.TypeVar("T")
 
@@ -130,6 +133,16 @@ async def client(sila_channel) -> _MotionClient:
     return _MotionClient(channel, pb)
 
 
+@pytest_asyncio.fixture
+async def homed_position(client: _MotionClient) -> AxisPosition:
+    """Home the robot and return its actual homed position.
+
+    Nominal coordinates in the simulator; the real firmware-reported position on
+    hardware. Position tests compare against this so they hold on both backends.
+    """
+    return (await client.home()).position
+
+
 # ── Simulation flag and firmware ──────────────────────────────────────────────
 
 
@@ -158,13 +171,13 @@ async def test_home_returns_homed_axes_string(client: _MotionClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_home_returns_homed_position(client: _MotionClient) -> None:
-    """Home XYZABC returns the firmware's hard-coded homed coordinates."""
+async def test_home_returns_homed_position(client: _MotionClient, homed_position: AxisPosition) -> None:
+    """Home returns reproducible homed coordinates (matches a prior home)."""
     result = await client.home()
-    assert result.position.x == pytest.approx(HOMED_POSITION.x)
-    assert result.position.y == pytest.approx(HOMED_POSITION.y)
-    assert result.position.z == pytest.approx(HOMED_POSITION.z)
-    assert result.position.a == pytest.approx(HOMED_POSITION.a)
+    assert result.position.x == pytest.approx(homed_position.x)
+    assert result.position.y == pytest.approx(homed_position.y)
+    assert result.position.z == pytest.approx(homed_position.z)
+    assert result.position.a == pytest.approx(homed_position.a)
 
 
 @pytest.mark.asyncio
@@ -176,8 +189,14 @@ async def test_home_sets_all_homed_flags(client: _MotionClient) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_home_subset_only_sets_requested_flags(client: _MotionClient) -> None:
-    """Homing only BC leaves X, Y, Z, A flags False."""
+    """Homing only BC leaves X, Y, Z, A flags False.
+
+    Simulator-only: assumes a cold (un-homed) starting state. On real hardware
+    homed flags reflect the firmware's actual state (GCODE.HOMING_STATUS) and
+    stay set from any prior home — homing a subset does not un-home other axes.
+    """
     await client.home(axes="BC")
     flags = await client.get_homed_flags()
     assert flags.b is True
@@ -190,12 +209,11 @@ async def test_home_subset_only_sets_requested_flags(client: _MotionClient) -> N
 
 
 @pytest.mark.asyncio
-async def test_get_position_reflects_home(client: _MotionClient) -> None:
+async def test_get_position_reflects_home(client: _MotionClient, homed_position: AxisPosition) -> None:
     """GetPosition returns the homed coordinates after a full home."""
-    await client.home()
     pos = await client.get_position()
-    assert pos.x == pytest.approx(HOMED_POSITION.x)
-    assert pos.y == pytest.approx(HOMED_POSITION.y)
+    assert pos.x == pytest.approx(homed_position.x)
+    assert pos.y == pytest.approx(homed_position.y)
 
 
 @pytest.mark.asyncio
@@ -207,28 +225,33 @@ async def test_move_axis_changes_target_axis(client: _MotionClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_move_axis_does_not_change_other_axes(client: _MotionClient) -> None:
+async def test_move_axis_does_not_change_other_axes(client: _MotionClient, homed_position: AxisPosition) -> None:
     """MoveAxis X leaves Y at its homed value."""
-    await client.home()
     result = await client.move_axis(axis=Axis.X, position=75.0)
-    assert result.y == pytest.approx(HOMED_POSITION.y)
+    assert result.y == pytest.approx(homed_position.y)
 
 
 @pytest.mark.asyncio
-async def test_move_relative_axis_accumulates(client: _MotionClient) -> None:
+async def test_move_relative_axis_accumulates(client: _MotionClient, homed_position: AxisPosition) -> None:
     """Two MoveRelativeAxis Y -20 mm moves produce Y = homed_Y - 40 mm."""
-    await client.home()
     await client.move_relative_axis(axis=Axis.Y, delta=-20.0)
     result = await client.move_relative_axis(axis=Axis.Y, delta=-20.0)
-    assert result.y == pytest.approx(HOMED_POSITION.y - 40.0)
+    assert result.y == pytest.approx(homed_position.y - 40.0)
 
 
 # ── Error reset ───────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
+@pytest.mark.simulator_only
 async def test_reset_from_error_clears_homed_flags(client: _MotionClient) -> None:
-    """ResetFromError clears the homed flags set by a prior Home call."""
+    """ResetFromError clears the homed flags set by a prior Home call.
+
+    Simulator-only: in simulation update_homed_flags() resets every flag to
+    False. On real hardware M999 does not un-home the carriages, and
+    update_homed_flags() re-queries the firmware (GCODE.HOMING_STATUS), which
+    still reports the axes homed — so the flags correctly remain True.
+    """
     await client.home()
     flags_before = await client.get_homed_flags()
     assert all([flags_before.x, flags_before.y, flags_before.z])

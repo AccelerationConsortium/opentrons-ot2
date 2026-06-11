@@ -212,7 +212,7 @@ class MotionControlFeature(sila.Feature):
         await self._controller.move(target={axis.value: position}, speed=spd)
         return _dict_to_position(await self._controller.get_position())
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[OutOfBoundsError])
     async def move_relative_axis(self, axis: Axis, delta: float, speed: float = 0.0) -> AxisPosition:
         """
         Move a single axis relative to current position.
@@ -225,6 +225,8 @@ class MotionControlFeature(sila.Feature):
         Returns:
             The actual position after the move.
         """
+        target = self._controller.position.get(axis.value, 0.0) + delta
+        self._check_bounds(axis, target)
         spd = speed if speed > 0 else None
         await self._controller.move_relative(deltas={axis.value: delta}, speed=spd)
         return _dict_to_position(await self._controller.get_position())
@@ -240,7 +242,7 @@ class MotionControlFeature(sila.Feature):
         position = await self._controller.get_position()
         return _dict_to_position(position)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[OutOfBoundsError])
     async def aspirate(
         self,
         mount: Mount,
@@ -264,10 +266,13 @@ class MotionControlFeature(sila.Feature):
             Axis positions after the move.
         """
         axis = mount.value
+        distance_mm = volume_ul / ul_per_mm
+        target = self._controller.position.get(axis.value, 0.0) - distance_mm
+        self._check_bounds(axis, target)
         await self._controller.aspirate(axis.value, volume_ul, ul_per_mm, flow_rate_ul_s)
         return _dict_to_position(await self._controller.get_position())
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[OutOfBoundsError])
     async def dispense(
         self,
         mount: Mount,
@@ -291,6 +296,9 @@ class MotionControlFeature(sila.Feature):
             Axis positions after the move.
         """
         axis = mount.value
+        distance_mm = volume_ul / ul_per_mm
+        target = self._controller.position.get(axis.value, 0.0) + distance_mm
+        self._check_bounds(axis, target)
         await self._controller.dispense(axis.value, volume_ul, ul_per_mm, flow_rate_ul_s)
         return _dict_to_position(await self._controller.get_position())
 
@@ -405,10 +413,13 @@ class MotionControlFeature(sila.Feature):
         duration_ms: typing.Annotated[float, constraints.MinimalInclusive(1.0)],
     ) -> None:
         """
-        Play a single tone through the Smoothie buzzer (M300).
+        Play a single tone through the OT-2 speaker (ALSA hw:0,0, via libasound).
+
+        The OT-2 has no buzzer wired to the Smoothie M300 line; audio is generated
+        as PCM and written to the Raspberry Pi audio output instead.
 
         Args:
-            frequency_hz: Tone frequency in Hz. 0 silences the buzzer.
+            frequency_hz: Tone frequency in Hz. 0 produces silence.
             duration_ms: Duration in milliseconds.
         """
         await self._controller.play_tone(frequency_hz, duration_ms)

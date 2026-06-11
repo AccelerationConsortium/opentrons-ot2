@@ -4,21 +4,28 @@ import logging
 
 from opentrons.drivers.temp_deck.driver import TempDeckDriver
 
+from ._module_base import ModuleControllerBase
 from ._types import Temperature
 
 log = logging.getLogger(__name__)
 
 
-class TemperatureModuleController:
-    """Controller for Temperature Module using Opentrons driver."""
+class TemperatureModuleController(ModuleControllerBase):
+    """
+    Controller for Temperature Module.
 
-    def __init__(self, driver: TempDeckDriver):
-        self._driver = driver
+    Two backends are supported (see ``ModuleControllerBase``):
+
+    - ``build(port=...)`` wraps a low-level ``TempDeckDriver`` that owns the serial
+      port directly (standalone connector mode).
+    - ``from_module(module)`` wraps the high-level ``TempDeck`` object already
+      attached to a shared ``HardwareControlAPI`` (in-process robot-server mode).
+    """
 
     @classmethod
     async def build(cls, port: str) -> "TemperatureModuleController":
         """
-        Build a TemperatureModuleController.
+        Build a controller that owns the serial port via a low-level driver.
 
         Args:
             port: Serial port path.
@@ -30,27 +37,23 @@ class TemperatureModuleController:
         await driver.connect()
         return cls(driver=driver)
 
-    async def disconnect(self) -> None:
-        """Disconnect from the module."""
-        await self._driver.disconnect()
-
-    async def is_connected(self) -> bool:
-        """Check connection status."""
-        return await self._driver.is_connected()
-
     async def set_temperature(self, temperature: float) -> None:
-        """Set target temperature in Celsius."""
-        await self._driver.set_temperature(celsius=temperature)
+        """Set target temperature in Celsius (does not wait for the target to be reached)."""
+        if self._module is not None:
+            await self._module.start_set_temperature(temperature)
+        else:
+            await self._driver.set_temperature(celsius=temperature)
 
     async def get_temperature(self) -> Temperature:
         """Get current and target temperature."""
+        if self._module is not None:
+            return Temperature(current=self._module.temperature, target=self._module.target)
         t = await self._driver.get_temperature()
         return Temperature(current=t.current, target=t.target)
 
     async def deactivate(self) -> None:
         """Turn off temperature control."""
-        await self._driver.deactivate()
-
-    async def get_device_info(self) -> dict:
-        """Get device serial, model, version."""
-        return await self._driver.get_device_info()
+        if self._module is not None:
+            await self._module.deactivate()
+        else:
+            await self._driver.deactivate()
