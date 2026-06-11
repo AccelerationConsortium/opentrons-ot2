@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from ._errors import ModuleOperationError
+
 
 @dataclass
 class Temperature:
@@ -29,9 +31,21 @@ class DeviceInfo:
 
     @classmethod
     def from_dict(cls, info: dict) -> "DeviceInfo":
-        """Build from an opentrons device_info mapping (keys: serial, model, version)."""
+        """
+        Build from an opentrons device_info mapping (keys: serial, model, version).
+
+        Raises:
+            ModuleOperationError: if any expected key is missing — a missing key
+                means the opentrons device-info contract changed, and reporting
+                phantom empty values would hide that (opentrons itself raises
+                ParseError here, see opentrons/drivers/utils.py).
+        """
+        missing = [key for key in ("serial", "model", "version") if key not in info]
+        if missing:
+            message = f"Module device info is missing expected keys {missing}: got {sorted(info)}"
+            raise ModuleOperationError(message)
         return cls(
-            serial_number=info.get("serial", ""),
-            model=info.get("model", ""),
-            firmware_version=info.get("version", ""),
+            serial_number=info["serial"],
+            model=info["model"],
+            firmware_version=info["version"],
         )

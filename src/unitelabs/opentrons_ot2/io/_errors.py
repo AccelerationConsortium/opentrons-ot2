@@ -71,11 +71,23 @@ def translate_module_errors(
         except _OPERATION_ERRORS as e:
             raise ModuleOperationError(str(e)) from e
 
+    # Marker so translate_public_async_methods never wraps a method twice
+    # (functools.wraps copies fn.__dict__, so set this after decorating).
+    wrapper._translates_module_errors = True  # type: ignore[attr-defined]
     return wrapper
 
 
 def translate_public_async_methods(cls: type) -> None:
-    """Apply ``translate_module_errors`` to every public async instance method of cls."""
+    """
+    Apply ``translate_module_errors`` to every public async instance method of cls.
+
+    Only methods defined directly on ``cls`` (``vars(cls)``) are wrapped; already
+    wrapped methods are skipped, so applying this to both a base class and its
+    subclasses is safe.
+    """
     for name, attr in list(vars(cls).items()):
-        if not name.startswith("_") and inspect.iscoroutinefunction(attr):
-            setattr(cls, name, translate_module_errors(attr))
+        if name.startswith("_") or not inspect.iscoroutinefunction(attr):
+            continue
+        if getattr(attr, "_translates_module_errors", False):
+            continue
+        setattr(cls, name, translate_module_errors(attr))
