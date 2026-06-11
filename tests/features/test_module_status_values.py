@@ -7,6 +7,8 @@ opentrons version must not surface as an undefined SiLA error).
 
 import pytest
 
+from opentrons.drivers.types import HeaterShakerLabwareLatchStatus, ThermocyclerLidStatus
+
 from unitelabs.opentrons_ot2.features.heater_shaker import LatchStatus
 from unitelabs.opentrons_ot2.features.magnetic import MagneticModuleFeature
 from unitelabs.opentrons_ot2.features.thermocycler import LidStatus
@@ -49,3 +51,16 @@ def test_latch_status_falls_back_to_unknown() -> None:
 
 def test_lid_status_falls_back_to_unknown() -> None:
     assert LidStatus("not-a-real-status") is LidStatus.UNKNOWN
+
+
+# The feature enums deliberately mirror (not import) the opentrons enums so the
+# public SiLA interface stays decoupled from opentrons internals. These guards
+# fail at CI time if a pinned-opentrons bump ever changes the mirrored values.
+
+
+def test_latch_status_matches_opentrons_values() -> None:
+    assert {m.value for m in LatchStatus} == {m.value for m in HeaterShakerLabwareLatchStatus}
+
+
+def test_lid_status_matches_opentrons_values() -> None:
+    assert {m.value for m in LidStatus} == {m.value for m in ThermocyclerLidStatus}
