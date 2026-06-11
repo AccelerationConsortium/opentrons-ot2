@@ -6,9 +6,8 @@ from unitelabs.cdk import sila
 from unitelabs.cdk.sila import constraints
 
 from ..io import (
+    COMMON_MODULE_ERRORS,
     DeviceInfo,
-    ModuleNotRespondingError,
-    ModuleOperationError,
     TemperatureModuleController,
     Temperature,
 )
@@ -36,7 +35,7 @@ class TemperatureModuleFeature(sila.Feature):
         super().__init__(originator="ca.accelerationconsortium", category="modules")
         self._controller = controller
 
-    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
     async def set_temperature(self, temperature_celsius: _TempCelsius) -> Temperature:
         """
         Set the target temperature.
@@ -50,7 +49,7 @@ class TemperatureModuleFeature(sila.Feature):
         await self._controller.set_temperature(temperature_celsius)
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
     async def get_temperature(self) -> Temperature:
         """
         Get the current temperature.
@@ -60,7 +59,7 @@ class TemperatureModuleFeature(sila.Feature):
         """
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
     async def deactivate(self) -> Temperature:
         """
         Turn off temperature control.
@@ -71,7 +70,7 @@ class TemperatureModuleFeature(sila.Feature):
         await self._controller.deactivate()
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
     async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.

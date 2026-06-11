@@ -52,6 +52,11 @@ class EngageHeightOutOfRangeError(Exception):
     """The requested magnet engage height is outside the module's allowed range."""
 
 
+# Defined errors every module command can raise; the features pass this to their
+# SiLA command declarations (plus any command-specific errors).
+COMMON_MODULE_ERRORS = (ModuleNotRespondingError, ModuleOperationError)
+
+
 def translate_module_errors(
     fn: typing.Callable[..., typing.Awaitable[object]],
 ) -> typing.Callable[..., typing.Awaitable[object]]:
