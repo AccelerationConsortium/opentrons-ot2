@@ -1,10 +1,23 @@
 """SiLA2 feature for Magnetic Module control."""
 
+import typing
 from dataclasses import dataclass
 
 from unitelabs.cdk import sila
+from unitelabs.cdk.sila import constraints
 
-from ..io import MagneticModuleController
+from ..io import (
+    COMMON_MODULE_ERRORS,
+    DeviceInfo,
+    EngageHeightOutOfRangeError,
+    MagneticModuleController,
+)
+
+# Engage height has a model-dependent maximum (GEN1: 45 mm, GEN2: 25 mm — see
+# opentrons MAX_ENGAGE_HEIGHT in hardware_control/modules/magdeck.py). Only the
+# model-independent lower bound (>= 0) is constrained statically; the per-model
+# maximum is enforced by the module, which raises if exceeded.
+_HeightMm = typing.Annotated[float, constraints.MinimalInclusive(0.0)]
 
 
 @dataclass
@@ -33,22 +46,23 @@ class MagneticModuleFeature(sila.Feature):
         super().__init__(originator="ca.accelerationconsortium", category="modules")
         self._controller = controller
 
-    @sila.UnobservableCommand()
-    async def engage(self, height: float) -> MagnetStatus:
+    @sila.UnobservableCommand(errors=[*COMMON_MODULE_ERRORS, EngageHeightOutOfRangeError])
+    async def engage(self, height_mm: _HeightMm) -> MagnetStatus:
         """
         Engage the magnets at a specified height.
 
         Args:
-            height: Height from home position in mm.
+            height_mm: Height from home position in mm. Must be >= 0; the maximum
+                is model-dependent (45 mm GEN1, 25 mm GEN2) and enforced by the module.
 
         Returns:
-            Magnet engagement status.
+            Magnet engagement status; engaged means position > 0, as in get_status.
         """
-        await self._controller.engage(height)
+        await self._controller.engage(height_mm)
         position = await self._controller.get_mag_position()
-        return MagnetStatus(engaged=True, position=position)
+        return MagnetStatus(engaged=position > 0, position=position)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
     async def disengage(self) -> MagnetStatus:
         """
         Disengage the magnets (lower to home position).
@@ -60,7 +74,7 @@ class MagneticModuleFeature(sila.Feature):
         position = await self._controller.get_mag_position()
         return MagnetStatus(engaged=False, position=position)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
     async def get_position(self) -> float:
         """
         Get the current magnet position.
@@ -70,7 +84,7 @@ class MagneticModuleFeature(sila.Feature):
         """
         return await self._controller.get_mag_position()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
     async def get_status(self) -> MagnetStatus:
         """
         Get the current magnet status.
@@ -82,8 +96,8 @@ class MagneticModuleFeature(sila.Feature):
         engaged = position > 0
         return MagnetStatus(engaged=engaged, position=position)
 
-    @sila.UnobservableCommand()
-    async def get_device_info(self) -> dict:
+    @sila.UnobservableCommand(errors=COMMON_MODULE_ERRORS)
+    async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.
 
