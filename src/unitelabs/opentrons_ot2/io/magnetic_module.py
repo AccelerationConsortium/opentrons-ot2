@@ -4,6 +4,7 @@ import logging
 
 from opentrons.drivers.mag_deck.driver import MagDeckDriver
 
+from ._errors import EngageHeightOutOfRangeError
 from ._module_base import ModuleControllerBase
 
 log = logging.getLogger(__name__)
@@ -42,11 +43,17 @@ class MagneticModuleController(ModuleControllerBase):
 
         Args:
             height: Height from home in mm.
+
+        Raises:
+            EngageHeightOutOfRangeError: if height exceeds the module's allowed range.
         """
-        if self._module is not None:
-            await self._module.engage(height=height)
-        else:
-            await self._driver.engage(height=height)
+        try:
+            if self._module is not None:
+                await self._module.engage(height=height)
+            else:
+                await self._driver.engage(height=height)
+        except ValueError as e:
+            raise EngageHeightOutOfRangeError(str(e)) from e
 
     async def disengage(self) -> None:
         """Disengage magnets (lower to home)."""

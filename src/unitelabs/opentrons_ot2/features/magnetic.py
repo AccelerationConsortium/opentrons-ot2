@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from unitelabs.cdk import sila
 from unitelabs.cdk.sila import constraints
 
-from ..io import DeviceInfo, MagneticModuleController
+from ..io import (
+    DeviceInfo,
+    EngageHeightOutOfRangeError,
+    MagneticModuleController,
+    ModuleNotRespondingError,
+    ModuleOperationError,
+)
 
 # Engage height has a model-dependent maximum (GEN1: 45 mm, GEN2: 25 mm — see
 # opentrons MAX_ENGAGE_HEIGHT in hardware_control/modules/magdeck.py). Only the
@@ -41,7 +47,7 @@ class MagneticModuleFeature(sila.Feature):
         super().__init__(originator="ca.accelerationconsortium", category="modules")
         self._controller = controller
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError, EngageHeightOutOfRangeError])
     async def engage(self, height_mm: _HeightMm) -> MagnetStatus:
         """
         Engage the magnets at a specified height.
@@ -57,7 +63,7 @@ class MagneticModuleFeature(sila.Feature):
         position = await self._controller.get_mag_position()
         return MagnetStatus(engaged=True, position=position)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def disengage(self) -> MagnetStatus:
         """
         Disengage the magnets (lower to home position).
@@ -69,7 +75,7 @@ class MagneticModuleFeature(sila.Feature):
         position = await self._controller.get_mag_position()
         return MagnetStatus(engaged=False, position=position)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_position(self) -> float:
         """
         Get the current magnet position.
@@ -79,7 +85,7 @@ class MagneticModuleFeature(sila.Feature):
         """
         return await self._controller.get_mag_position()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_status(self) -> MagnetStatus:
         """
         Get the current magnet status.
@@ -91,7 +97,7 @@ class MagneticModuleFeature(sila.Feature):
         engaged = position > 0
         return MagnetStatus(engaged=engaged, position=position)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.

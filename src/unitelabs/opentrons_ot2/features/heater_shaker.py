@@ -7,7 +7,14 @@ from dataclasses import dataclass
 from unitelabs.cdk import sila
 from unitelabs.cdk.sila import constraints
 
-from ..io import DeviceInfo, HeaterShakerController, Temperature, RPM
+from ..io import (
+    DeviceInfo,
+    HeaterShakerController,
+    ModuleNotRespondingError,
+    ModuleOperationError,
+    Temperature,
+    RPM,
+)
 
 # Sourced from opentrons: heater-shaker temperature validated 0-95 C
 # (opentrons/protocol_api/module_validation_and_errors.py: HEATER_SHAKER_TEMPERATURE_MAX=95),
@@ -58,7 +65,7 @@ class HeaterShakerFeature(sila.Feature):
         super().__init__(originator="ca.accelerationconsortium", category="modules")
         self._controller = controller
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def set_temperature(self, temperature_celsius: _TempCelsius) -> Temperature:
         """
         Set the target temperature.
@@ -73,7 +80,7 @@ class HeaterShakerFeature(sila.Feature):
         await self._controller.set_temperature(temperature_celsius)
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_temperature(self) -> Temperature:
         """
         Get the current temperature.
@@ -83,7 +90,7 @@ class HeaterShakerFeature(sila.Feature):
         """
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def deactivate_heater(self) -> Temperature:
         """
         Turn off the heater.
@@ -94,7 +101,7 @@ class HeaterShakerFeature(sila.Feature):
         await self._controller.deactivate_heater()
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def set_rpm(self, rpm: _Rpm) -> RPM:
         """
         Set the shaking speed.
@@ -109,7 +116,7 @@ class HeaterShakerFeature(sila.Feature):
         await self._controller.set_rpm(rpm)
         return await self._controller.get_rpm()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_rpm(self) -> RPM:
         """
         Get the current shaking speed.
@@ -119,7 +126,7 @@ class HeaterShakerFeature(sila.Feature):
         """
         return await self._controller.get_rpm()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def stop_shaking(self) -> RPM:
         """
         Stop shaking and return to home position.
@@ -130,7 +137,7 @@ class HeaterShakerFeature(sila.Feature):
         await self._controller.stop_shaking()
         return await self._controller.get_rpm()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def open_latch(self) -> LatchStatus:
         """
         Open the labware latch.
@@ -142,7 +149,7 @@ class HeaterShakerFeature(sila.Feature):
         status = await self._controller.get_latch_status()
         return LatchStatus(status.value)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def close_latch(self) -> LatchStatus:
         """
         Close the labware latch.
@@ -154,7 +161,7 @@ class HeaterShakerFeature(sila.Feature):
         status = await self._controller.get_latch_status()
         return LatchStatus(status.value)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_latch_status(self) -> LatchStatus:
         """
         Get the current latch status.
@@ -165,7 +172,7 @@ class HeaterShakerFeature(sila.Feature):
         status = await self._controller.get_latch_status()
         return LatchStatus(status.value)
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_status(self) -> HeaterShakerStatus:
         """
         Get complete module status.
@@ -185,7 +192,7 @@ class HeaterShakerFeature(sila.Feature):
             latch_status=LatchStatus(latch.value),
         )
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.

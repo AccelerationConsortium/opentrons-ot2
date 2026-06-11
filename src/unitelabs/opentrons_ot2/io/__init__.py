@@ -21,6 +21,7 @@ Example usage:
         await controller.disconnect()
 """
 
+from ._errors import EngageHeightOutOfRangeError, ModuleNotRespondingError, ModuleOperationError
 from ._types import RPM, DeviceInfo, Temperature
 from .heater_shaker import HeaterShakerController
 from .magnetic_module import MagneticModuleController
@@ -33,9 +34,12 @@ from .thermocycler import ThermocyclerController
 __all__ = [
     "RPM",
     "DeviceInfo",
+    "EngageHeightOutOfRangeError",
     "HardwareProxy",
     "HeaterShakerController",
     "MagneticModuleController",
+    "ModuleNotRespondingError",
+    "ModuleOperationError",
     "OT2MotionController",
     "Temperature",
     "TemperatureModuleController",

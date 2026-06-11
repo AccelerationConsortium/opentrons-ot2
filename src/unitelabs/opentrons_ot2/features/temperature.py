@@ -5,7 +5,13 @@ import typing
 from unitelabs.cdk import sila
 from unitelabs.cdk.sila import constraints
 
-from ..io import DeviceInfo, TemperatureModuleController, Temperature
+from ..io import (
+    DeviceInfo,
+    ModuleNotRespondingError,
+    ModuleOperationError,
+    TemperatureModuleController,
+    Temperature,
+)
 
 # Sourced from opentrons: tempdeck QA-tested range 4-95 C
 # (opentrons/hardware_control/modules/tempdeck.py, protocol_api/module_contexts.py).
@@ -30,7 +36,7 @@ class TemperatureModuleFeature(sila.Feature):
         super().__init__(originator="ca.accelerationconsortium", category="modules")
         self._controller = controller
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def set_temperature(self, temperature_celsius: _TempCelsius) -> Temperature:
         """
         Set the target temperature.
@@ -44,7 +50,7 @@ class TemperatureModuleFeature(sila.Feature):
         await self._controller.set_temperature(temperature_celsius)
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_temperature(self) -> Temperature:
         """
         Get the current temperature.
@@ -54,7 +60,7 @@ class TemperatureModuleFeature(sila.Feature):
         """
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def deactivate(self) -> Temperature:
         """
         Turn off temperature control.
@@ -65,7 +71,7 @@ class TemperatureModuleFeature(sila.Feature):
         await self._controller.deactivate()
         return await self._controller.get_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.

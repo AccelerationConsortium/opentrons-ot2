@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from unitelabs.cdk import sila
 from unitelabs.cdk.sila import constraints
 
-from ..io import DeviceInfo, ThermocyclerController, Temperature
+from ..io import (
+    DeviceInfo,
+    ModuleNotRespondingError,
+    ModuleOperationError,
+    ThermocyclerController,
+    Temperature,
+)
 
 # Sourced from opentrons protocol_api/module_contexts.py: block 4-99 C, lid 37-110 C.
 _BlockCelsius = typing.Annotated[float, constraints.MinimalInclusive(4.0), constraints.MaximalInclusive(99.0)]
@@ -57,7 +63,7 @@ class ThermocyclerFeature(sila.Feature):
 
     # ============ Lid Control ============
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def open_lid(self) -> LidStatus:
         """
         Open the thermocycler lid.
@@ -68,7 +74,7 @@ class ThermocyclerFeature(sila.Feature):
         await self._controller.open_lid()
         return LidStatus(await self._controller.get_lid_status())
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def close_lid(self) -> LidStatus:
         """
         Close the thermocycler lid.
@@ -79,7 +85,7 @@ class ThermocyclerFeature(sila.Feature):
         await self._controller.close_lid()
         return LidStatus(await self._controller.get_lid_status())
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_lid_status(self) -> LidStatus:
         """
         Get the current lid status.
@@ -91,7 +97,7 @@ class ThermocyclerFeature(sila.Feature):
 
     # ============ Temperature Control ============
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def set_lid_temperature(self, temperature_celsius: _LidCelsius) -> Temperature:
         """
         Set the lid temperature.
@@ -105,7 +111,7 @@ class ThermocyclerFeature(sila.Feature):
         await self._controller.set_lid_temperature(temperature_celsius)
         return await self._controller.get_lid_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_lid_temperature(self) -> Temperature:
         """
         Get the current lid temperature.
@@ -115,7 +121,7 @@ class ThermocyclerFeature(sila.Feature):
         """
         return await self._controller.get_lid_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def set_plate_temperature(
         self,
         temperature_celsius: _BlockCelsius,
@@ -140,7 +146,7 @@ class ThermocyclerFeature(sila.Feature):
         )
         return await self._controller.get_plate_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_plate_temperature(self) -> Temperature:
         """
         Get the current plate (block) temperature.
@@ -150,7 +156,7 @@ class ThermocyclerFeature(sila.Feature):
         """
         return await self._controller.get_plate_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def deactivate_lid(self) -> Temperature:
         """
         Turn off the lid heater.
@@ -161,7 +167,7 @@ class ThermocyclerFeature(sila.Feature):
         await self._controller.deactivate_lid()
         return await self._controller.get_lid_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def deactivate_block(self) -> Temperature:
         """
         Turn off the block heater/cooler.
@@ -172,7 +178,7 @@ class ThermocyclerFeature(sila.Feature):
         await self._controller.deactivate_block()
         return await self._controller.get_plate_temperature()
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def deactivate_all(self) -> ThermocyclerStatus:
         """
         Turn off all heating/cooling.
@@ -185,7 +191,7 @@ class ThermocyclerFeature(sila.Feature):
 
     # ============ Status ============
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_status(self) -> ThermocyclerStatus:
         """
         Get complete module status.
@@ -205,7 +211,7 @@ class ThermocyclerFeature(sila.Feature):
             lid_status=lid_status,
         )
 
-    @sila.UnobservableCommand()
+    @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.
