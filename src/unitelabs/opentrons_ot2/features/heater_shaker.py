@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from unitelabs.cdk import sila
 
-from ..io import HeaterShakerController, Temperature, RPM
+from ..io import DeviceInfo, HeaterShakerController, Temperature, RPM
 
 
 @dataclass
@@ -164,7 +164,7 @@ class HeaterShakerFeature(sila.Feature):
         )
 
     @sila.UnobservableCommand()
-    async def get_device_info(self) -> dict:
+    async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.
 

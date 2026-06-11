@@ -2,7 +2,7 @@
 
 from unitelabs.cdk import sila
 
-from ..io import TemperatureModuleController, Temperature
+from ..io import DeviceInfo, TemperatureModuleController, Temperature
 
 
 class TemperatureModuleFeature(sila.Feature):
@@ -59,7 +59,7 @@ class TemperatureModuleFeature(sila.Feature):
         return await self._controller.get_temperature()
 
     @sila.UnobservableCommand()
-    async def get_device_info(self) -> dict:
+    async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.
 

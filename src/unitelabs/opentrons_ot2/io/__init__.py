@@ -21,7 +21,7 @@ Example usage:
         await controller.disconnect()
 """
 
-from ._types import RPM, Temperature
+from ._types import RPM, DeviceInfo, Temperature
 from .heater_shaker import HeaterShakerController
 from .magnetic_module import MagneticModuleController
 from .modules import scan_module_ports
@@ -32,6 +32,7 @@ from .thermocycler import ThermocyclerController
 
 __all__ = [
     "RPM",
+    "DeviceInfo",
     "HardwareProxy",
     "HeaterShakerController",
     "MagneticModuleController",

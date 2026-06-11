@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from unitelabs.cdk import sila
 
-from ..io import ThermocyclerController, Temperature
+from ..io import DeviceInfo, ThermocyclerController, Temperature
 
 
 @dataclass
@@ -189,7 +189,7 @@ class ThermocyclerFeature(sila.Feature):
         )
 
     @sila.UnobservableCommand()
-    async def get_device_info(self) -> dict:
+    async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.
 

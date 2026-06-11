@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from unitelabs.cdk import sila
 
-from ..io import MagneticModuleController
+from ..io import DeviceInfo, MagneticModuleController
 
 
 @dataclass
@@ -83,7 +83,7 @@ class MagneticModuleFeature(sila.Feature):
         return MagnetStatus(engaged=engaged, position=position)
 
     @sila.UnobservableCommand()
-    async def get_device_info(self) -> dict:
+    async def get_device_info(self) -> DeviceInfo:
         """
         Get device information.
 

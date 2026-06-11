@@ -12,6 +12,7 @@ from typing import ClassVar
 import pytest
 
 from unitelabs.opentrons_ot2.io import (
+    DeviceInfo,
     HeaterShakerController,
     MagneticModuleController,
     TemperatureModuleController,
@@ -56,7 +57,7 @@ async def test_temperature_from_module_maps_calls():
     await ctrl.deactivate()
     assert ("deactivate", (), {}) in mod.calls
 
-    assert await ctrl.get_device_info() == mod.device_info
+    assert await ctrl.get_device_info() == DeviceInfo.from_dict(mod.device_info)
     assert await ctrl.is_connected() is True
     await ctrl.disconnect()  # no-op, must not raise
 
@@ -117,7 +118,7 @@ async def test_heater_shaker_from_module_maps_calls():
     assert ("close_labware_latch", (), {}) in mod.calls
 
     assert await ctrl.get_latch_status() == "idle_closed"
-    assert await ctrl.get_device_info() == mod.device_info
+    assert await ctrl.get_device_info() == DeviceInfo.from_dict(mod.device_info)
     await ctrl.disconnect()  # no-op
 
 
@@ -189,7 +190,7 @@ async def test_thermocycler_from_module_maps_calls():
     assert ("deactivate_block", (), {}) in mod.calls
     assert ("deactivate", (), {}) in mod.calls
 
-    assert await ctrl.get_device_info() == mod.device_info
+    assert await ctrl.get_device_info() == DeviceInfo.from_dict(mod.device_info)
     await ctrl.disconnect()  # no-op
 
 
@@ -219,5 +220,5 @@ async def test_magnetic_from_module_maps_calls():
     assert ("deactivate", (), {}) in mod.calls
 
     assert await ctrl.get_mag_position() == 12.5
-    assert await ctrl.get_device_info() == mod.device_info
+    assert await ctrl.get_device_info() == DeviceInfo.from_dict(mod.device_info)
     await ctrl.disconnect()  # no-op

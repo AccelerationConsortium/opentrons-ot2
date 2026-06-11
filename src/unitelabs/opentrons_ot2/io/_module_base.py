@@ -15,6 +15,8 @@ device-specific commands.
 
 import logging
 
+from ._types import DeviceInfo
+
 log = logging.getLogger(__name__)
 
 
@@ -47,8 +49,8 @@ class ModuleControllerBase:
             return True
         return await self._driver.is_connected()
 
-    async def get_device_info(self) -> dict:
-        """Get device serial, model, version."""
+    async def get_device_info(self) -> DeviceInfo:
+        """Get device serial number, model, and firmware version."""
         if self._module is not None:
-            return dict(self._module.device_info)
-        return await self._driver.get_device_info()
+            return DeviceInfo.from_dict(dict(self._module.device_info))
+        return DeviceInfo.from_dict(await self._driver.get_device_info())
