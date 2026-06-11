@@ -1,10 +1,16 @@
 """SiLA2 feature for Thermocycler module control."""
 
+import typing
 from dataclasses import dataclass
 
 from unitelabs.cdk import sila
+from unitelabs.cdk.sila import constraints
 
 from ..io import DeviceInfo, ThermocyclerController, Temperature
+
+# Sourced from opentrons protocol_api/module_contexts.py: block 4-99 C, lid 37-110 C.
+_BlockCelsius = typing.Annotated[float, constraints.MinimalInclusive(4.0), constraints.MaximalInclusive(99.0)]
+_LidCelsius = typing.Annotated[float, constraints.MinimalInclusive(37.0), constraints.MaximalInclusive(110.0)]
 
 
 @dataclass
@@ -75,17 +81,17 @@ class ThermocyclerFeature(sila.Feature):
     # ============ Temperature Control ============
 
     @sila.UnobservableCommand()
-    async def set_lid_temperature(self, temperature: float) -> Temperature:
+    async def set_lid_temperature(self, temperature_celsius: _LidCelsius) -> Temperature:
         """
         Set the lid temperature.
 
         Args:
-            temperature: Target temperature in Celsius.
+            temperature_celsius: Target lid temperature in Celsius (valid range 37-110 C).
 
         Returns:
             Current and target lid temperature.
         """
-        await self._controller.set_lid_temperature(temperature)
+        await self._controller.set_lid_temperature(temperature_celsius)
         return await self._controller.get_lid_temperature()
 
     @sila.UnobservableCommand()
@@ -101,25 +107,25 @@ class ThermocyclerFeature(sila.Feature):
     @sila.UnobservableCommand()
     async def set_plate_temperature(
         self,
-        temperature: float,
-        hold_time: float | None = None,
-        volume: float | None = None,
+        temperature_celsius: _BlockCelsius,
+        hold_time_seconds: float | None = None,
+        volume_ul: float | None = None,
     ) -> Temperature:
         """
         Set the plate (block) temperature.
 
         Args:
-            temperature: Target temperature in Celsius.
-            hold_time: Optional hold time in seconds.
-            volume: Optional sample volume in uL for better thermal control.
+            temperature_celsius: Target block temperature in Celsius (valid range 4-99 C).
+            hold_time_seconds: Optional hold time in seconds.
+            volume_ul: Optional sample volume in uL for better thermal control.
 
         Returns:
             Current and target plate temperature.
         """
         await self._controller.set_plate_temperature(
-            temperature=temperature,
-            hold_time=hold_time,
-            volume=volume,
+            temperature=temperature_celsius,
+            hold_time=hold_time_seconds,
+            volume=volume_ul,
         )
         return await self._controller.get_plate_temperature()
 

@@ -1,10 +1,18 @@
 """SiLA2 feature for Magnetic Module control."""
 
+import typing
 from dataclasses import dataclass
 
 from unitelabs.cdk import sila
+from unitelabs.cdk.sila import constraints
 
 from ..io import DeviceInfo, MagneticModuleController
+
+# Engage height has a model-dependent maximum (GEN1: 45 mm, GEN2: 25 mm — see
+# opentrons MAX_ENGAGE_HEIGHT in hardware_control/modules/magdeck.py). Only the
+# model-independent lower bound (>= 0) is constrained statically; the per-model
+# maximum is enforced by the module, which raises if exceeded.
+_HeightMm = typing.Annotated[float, constraints.MinimalInclusive(0.0)]
 
 
 @dataclass
@@ -34,17 +42,18 @@ class MagneticModuleFeature(sila.Feature):
         self._controller = controller
 
     @sila.UnobservableCommand()
-    async def engage(self, height: float) -> MagnetStatus:
+    async def engage(self, height_mm: _HeightMm) -> MagnetStatus:
         """
         Engage the magnets at a specified height.
 
         Args:
-            height: Height from home position in mm.
+            height_mm: Height from home position in mm. Must be >= 0; the maximum
+                is model-dependent (45 mm GEN1, 25 mm GEN2) and enforced by the module.
 
         Returns:
             Magnet engagement status.
         """
-        await self._controller.engage(height)
+        await self._controller.engage(height_mm)
         position = await self._controller.get_mag_position()
         return MagnetStatus(engaged=True, position=position)
 

@@ -1,10 +1,18 @@
 """SiLA2 feature for Heater-Shaker module control."""
 
+import typing
 from dataclasses import dataclass
 
 from unitelabs.cdk import sila
+from unitelabs.cdk.sila import constraints
 
 from ..io import DeviceInfo, HeaterShakerController, Temperature, RPM
+
+# Sourced from opentrons: heater-shaker temperature validated 0-95 C
+# (opentrons/protocol_api/module_validation_and_errors.py: HEATER_SHAKER_TEMPERATURE_MAX=95),
+# shaking speed 0-3000 RPM (opentrons/hardware_control/modules/heater_shaker.py).
+_TempCelsius = typing.Annotated[float, constraints.MinimalInclusive(0.0), constraints.MaximalInclusive(95.0)]
+_Rpm = typing.Annotated[int, constraints.MinimalInclusive(0), constraints.MaximalInclusive(3000)]
 
 
 @dataclass
@@ -39,17 +47,18 @@ class HeaterShakerFeature(sila.Feature):
         self._controller = controller
 
     @sila.UnobservableCommand()
-    async def set_temperature(self, temperature: float) -> Temperature:
+    async def set_temperature(self, temperature_celsius: _TempCelsius) -> Temperature:
         """
         Set the target temperature.
 
         Args:
-            temperature: Target temperature in Celsius.
+            temperature_celsius: Target temperature in Celsius (valid range 0-95 C;
+                the module heats only, so the effective minimum is ambient).
 
         Returns:
             Current and target temperature.
         """
-        await self._controller.set_temperature(temperature)
+        await self._controller.set_temperature(temperature_celsius)
         return await self._controller.get_temperature()
 
     @sila.UnobservableCommand()
@@ -74,12 +83,13 @@ class HeaterShakerFeature(sila.Feature):
         return await self._controller.get_temperature()
 
     @sila.UnobservableCommand()
-    async def set_rpm(self, rpm: int) -> RPM:
+    async def set_rpm(self, rpm: _Rpm) -> RPM:
         """
         Set the shaking speed.
 
         Args:
-            rpm: Target speed in RPM (200-3000 typical range).
+            rpm: Target shaking speed in revolutions per minute (valid range 0-3000;
+                0 stops shaking).
 
         Returns:
             Current and target RPM.

@@ -1,8 +1,15 @@
 """SiLA2 feature for Temperature Module control."""
 
+import typing
+
 from unitelabs.cdk import sila
+from unitelabs.cdk.sila import constraints
 
 from ..io import DeviceInfo, TemperatureModuleController, Temperature
+
+# Sourced from opentrons: tempdeck QA-tested range 4-95 C
+# (opentrons/hardware_control/modules/tempdeck.py, protocol_api/module_contexts.py).
+_TempCelsius = typing.Annotated[float, constraints.MinimalInclusive(4.0), constraints.MaximalInclusive(95.0)]
 
 
 class TemperatureModuleFeature(sila.Feature):
@@ -24,17 +31,17 @@ class TemperatureModuleFeature(sila.Feature):
         self._controller = controller
 
     @sila.UnobservableCommand()
-    async def set_temperature(self, temperature: float) -> Temperature:
+    async def set_temperature(self, temperature_celsius: _TempCelsius) -> Temperature:
         """
         Set the target temperature.
 
         Args:
-            temperature: Target temperature in Celsius (typically 4-95°C).
+            temperature_celsius: Target temperature in Celsius (valid range 4-95 C).
 
         Returns:
             Current and target temperature.
         """
-        await self._controller.set_temperature(temperature)
+        await self._controller.set_temperature(temperature_celsius)
         return await self._controller.get_temperature()
 
     @sila.UnobservableCommand()
