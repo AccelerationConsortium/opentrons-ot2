@@ -1,6 +1,7 @@
 """SiLA2 feature for Thermocycler module control."""
 
 import enum
+import logging
 import typing
 from dataclasses import dataclass
 
@@ -20,6 +21,9 @@ _BlockCelsius = typing.Annotated[float, constraints.MinimalInclusive(4.0), const
 _LidCelsius = typing.Annotated[float, constraints.MinimalInclusive(37.0), constraints.MaximalInclusive(110.0)]
 
 
+log = logging.getLogger(__name__)
+
+
 class LidStatus(enum.Enum):
     """Thermocycler lid position (mirrors opentrons ThermocyclerLidStatus)."""
 
@@ -28,6 +32,13 @@ class LidStatus(enum.Enum):
     IN_BETWEEN = "in_between"
     UNKNOWN = "unknown"
     MAX = "max"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "LidStatus":
+        # A status value outside this set (e.g. from a newer opentrons version)
+        # must not crash the command with an undefined SiLA error.
+        log.warning("Unrecognized thermocycler lid status %r; reporting UNKNOWN", value)
+        return cls.UNKNOWN
 
 
 @dataclass

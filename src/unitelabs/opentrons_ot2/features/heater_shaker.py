@@ -1,6 +1,7 @@
 """SiLA2 feature for Heater-Shaker module control."""
 
 import enum
+import logging
 import typing
 from dataclasses import dataclass
 
@@ -23,6 +24,9 @@ _TempCelsius = typing.Annotated[float, constraints.MinimalInclusive(0.0), constr
 _Rpm = typing.Annotated[int, constraints.MinimalInclusive(0), constraints.MaximalInclusive(3000)]
 
 
+log = logging.getLogger(__name__)
+
+
 class LatchStatus(enum.Enum):
     """Heater-shaker labware latch position (mirrors opentrons HeaterShakerLabwareLatchStatus)."""
 
@@ -32,6 +36,13 @@ class LatchStatus(enum.Enum):
     IDLE_CLOSED = "idle_closed"
     IDLE_UNKNOWN = "idle_unknown"
     UNKNOWN = "unknown"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "LatchStatus":
+        # A status value outside this set (e.g. from a newer opentrons version)
+        # must not crash the command with an undefined SiLA error.
+        log.warning("Unrecognized heater-shaker latch status %r; reporting UNKNOWN", value)
+        return cls.UNKNOWN
 
 
 @dataclass

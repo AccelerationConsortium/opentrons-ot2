@@ -57,11 +57,11 @@ class MagneticModuleFeature(sila.Feature):
                 is model-dependent (45 mm GEN1, 25 mm GEN2) and enforced by the module.
 
         Returns:
-            Magnet engagement status.
+            Magnet engagement status; engaged means position > 0, as in get_status.
         """
         await self._controller.engage(height_mm)
         position = await self._controller.get_mag_position()
-        return MagnetStatus(engaged=True, position=position)
+        return MagnetStatus(engaged=position > 0, position=position)
 
     @sila.UnobservableCommand(errors=[ModuleNotRespondingError, ModuleOperationError])
     async def disengage(self) -> MagnetStatus:

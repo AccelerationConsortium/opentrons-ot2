@@ -55,3 +55,18 @@ async def test_engage_value_error_becomes_out_of_range() -> None:
     ctrl = MagneticModuleController.from_module(_RaisingMagModule())
     with pytest.raises(EngageHeightOutOfRangeError):
         await ctrl.engage(99.0)
+
+
+class _OtherValueErrorMagModule:
+    """Fake magnetic module raising a ValueError unrelated to engage height."""
+
+    async def engage(self, height: float | None = None) -> None:
+        raise ValueError("could not convert string to float: 'NaN'")
+
+
+@pytest.mark.asyncio
+async def test_unrelated_value_error_is_not_mislabeled_as_out_of_range() -> None:
+    ctrl = MagneticModuleController.from_module(_OtherValueErrorMagModule())
+    with pytest.raises(ValueError) as excinfo:
+        await ctrl.engage(10.0)
+    assert not isinstance(excinfo.value, EngageHeightOutOfRangeError)
