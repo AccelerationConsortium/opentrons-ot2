@@ -22,7 +22,8 @@ The standard `opentrons-robot-server` systemd service is disabled on deployment.
 `sila2-connector` service owns the hardware and starts the HTTP API in-process via
 uvicorn on a Unix domain socket (`/run/aiohttp.sock`). nginx on the OT-2 proxies
 external TCP port 31950 to that socket — so the HTTP API is reachable at
-`http://<robot-ip>:31950` exactly as it would be with the stock firmware.
+`http://<robot-ip>:31950` exactly as it would be with the stock `opentrons-robot-server`
+service.
 
 **Key source files:**
 
