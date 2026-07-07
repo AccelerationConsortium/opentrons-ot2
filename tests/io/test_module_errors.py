@@ -5,6 +5,8 @@ defined errors regardless of which opentrons exception (comm vs module-specific)
 was actually raised.
 """
 
+import typing
+
 import pytest
 
 from opentrons.drivers.asyncio.communication.errors import NoResponse
@@ -70,3 +72,31 @@ async def test_unrelated_value_error_is_not_mislabeled_as_out_of_range() -> None
     with pytest.raises(ValueError) as excinfo:
         await ctrl.engage(10.0)
     assert not isinstance(excinfo.value, EngageHeightOutOfRangeError)
+
+
+class _RaisingInfoDriver:
+    """Fake driver whose get_device_info raises a comm error."""
+
+    async def get_device_info(self) -> dict:
+        raise NoResponse(port="/dev/x", command="M115")
+
+
+@pytest.mark.asyncio
+async def test_base_class_method_is_translated() -> None:
+    """Methods inherited from ModuleControllerBase must be wrapped too."""
+    ctrl = TemperatureModuleController(driver=_RaisingInfoDriver())
+    with pytest.raises(ModuleNotRespondingError):
+        await ctrl.get_device_info()
+
+
+class _IncompleteInfoModule:
+    """Fake module whose device_info is missing the version key."""
+
+    device_info: typing.ClassVar[dict] = {"serial": "T1", "model": "temp_v2"}
+
+
+@pytest.mark.asyncio
+async def test_device_info_missing_key_fails_loudly() -> None:
+    ctrl = TemperatureModuleController.from_module(_IncompleteInfoModule())
+    with pytest.raises(ModuleOperationError, match="version"):
+        await ctrl.get_device_info()
