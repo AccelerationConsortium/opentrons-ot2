@@ -222,17 +222,45 @@ class OT2MotionController:
         one asyncio.Lock and passes it to both this method and HardwareProxy so that
         all callers from both servers are serialised through the same lock.
 
+        On real hardware, ``hw_api``'s backend is ``Controller``, whose own
+        move/home/current methods just forward to its ``_smoothie_driver`` — so
+        that object genuinely is the one true mover, and sharing it here is safe.
+        On a simulated ``hw_api`` (``Simulator`` backend), movement is implemented
+        by ``Simulator`` itself; its ``_smoothie_driver`` is a bare ``SimulatingDriver``
+        stub it only ever pokes for a few incidental things (home flags, dwelling
+        current, steps-per-mm) and never asks to move. That stub doesn't implement
+        the rest of the interface this class drives directly (``move``, ``position``,
+        ``probe_axis``, ``set_active_current``, ...), so it can't be shared the same
+        way — we build a real (simulated) ``SmoothieDriver`` of our own instead, the
+        same one ``build(simulate=True)`` already uses.
+
         Args:
             hw_api: An already-built HardwareControlAPI (OT-2, not OT-3).
             lock: Shared asyncio.Lock — must be the same instance passed to HardwareProxy.
             lock_timeout_s: Seconds to wait for the lock before raising TimeoutError.
 
         Returns:
-            OT2MotionController wrapping the same SmoothieDriver as hw_api.
+            OT2MotionController wrapping the same SmoothieDriver as hw_api on real
+            hardware, or its own standalone simulated SmoothieDriver when hw_api is
+            a simulator.
         """
         backend = hw_api._backend  # type: ignore[attr-defined]
+        if isinstance(backend._smoothie_driver, SmoothieDriver):
+            smoothie_driver = backend._smoothie_driver
+        else:
+            log.info(
+                "HardwareControlAPI backend's _smoothie_driver is a %s, not a real "
+                "SmoothieDriver (simulator backend) — building a standalone simulated "
+                "SmoothieDriver instead of sharing it",
+                type(backend._smoothie_driver).__name__,
+            )
+            smoothie_driver = SmoothieDriver(
+                config=load_ot2(),
+                gpio_chardev=backend.gpio_chardev,
+                connection=None,  # None = simulation mode
+            )
         controller = cls(
-            smoothie_driver=backend._smoothie_driver,
+            smoothie_driver=smoothie_driver,
             gpio=backend.gpio_chardev,
             lock=lock,
             lock_timeout_s=lock_timeout_s,
