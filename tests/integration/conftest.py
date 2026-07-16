@@ -211,6 +211,112 @@ def http_client(robot_http_url: str) -> httpx.Client:
         yield client
 
 
+@pytest.fixture(scope="session")
+def _hardware_sila_address(request: pytest.FixtureRequest) -> Generator[str | None, None, None]:
+    """Start the connector with_robot_server=True (real, simulated HardwareControlAPI)
+    on its own background thread, and yield its SiLA gRPC address.
+
+    Unlike `sila_channel` (SiLA-only), this boots the connector the way it actually
+    needs to run for hardware-backed commands -- e.g. CalibrationFeature's
+    GetDeckCalibration/GetPipetteOffset, which raise CalibrationUnavailableError
+    without a HardwareControlAPI -- to be reachable at all. This is the gap the
+    feature-level unit tests (which inject _hw_api directly, bypassing app startup
+    and the wire entirely) can't catch.
+
+    Yields None when --robot is set (the live robot's own connector already runs
+    with_robot_server=True in production; `hardware_sila_channel` redirects to it
+    directly) or when --with-http-server is not set.
+    """
+    if request.config.getoption("--robot") or not request.config.getoption("--with-http-server"):
+        yield None
+        return
+
+    def _free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    ready: threading.Event = threading.Event()
+    stop: threading.Event = threading.Event()
+    exc: list[BaseException] = []
+    address: list[str] = []
+
+    async def _serve() -> None:
+        config = OpentronsOt2Config(
+            use_simulator=True,
+            with_robot_server=True,
+            robot_server_tcp_port=_free_port(),
+            sila_server=SiLAServerConfig(hostname="127.0.0.1", port=0, tls=False),
+            cloud_server_endpoint=None,
+            discovery=None,
+        )
+        gen = create_app(config)
+        connector = await gen.__anext__()
+        await connector.start()
+        address.append(connector.sila_server._address)
+        ready.set()
+        await asyncio.to_thread(stop.wait)
+        await connector.stop()
+        with contextlib.suppress(StopAsyncIteration):
+            await gen.__anext__()
+
+    def _run() -> None:
+        try:
+            asyncio.run(_serve())
+        except BaseException as e:
+            exc.append(e)
+            ready.set()
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+
+    if not ready.wait(timeout=60):
+        raise TimeoutError("Hardware-backed SiLA server did not start within 60 s")
+    if exc:
+        raise exc[0]
+
+    yield address[0]
+
+    stop.set()
+    thread.join(timeout=15)
+
+
+@pytest_asyncio.fixture
+async def hardware_sila_channel(robot_address: str | None, _hardware_sila_address: str | None):
+    """Yield (channel, pb) for a connector running with a real HardwareControlAPI.
+
+    Address comes from --robot when given (the live connector already runs
+    with_robot_server=True), otherwise from the local with_robot_server=True
+    simulator started by _hardware_sila_address. Marked robot_http_only so it's
+    skipped at collection when neither --robot nor --with-http-server is set.
+    """
+    address = robot_address or _hardware_sila_address
+    if address is None:
+        pytest.skip("--with-http-server or --robot required for hardware-backed SiLA tests")
+
+    # pb (protobuf codec) is derived from feature definitions, not the wire, so a
+    # throwaway bare simulator connector suffices to obtain it -- same as sila_channel.
+    config = OpentronsOt2Config(
+        use_simulator=True,
+        sila_server=SiLAServerConfig(hostname="127.0.0.1", port=0, tls=False),
+        cloud_server_endpoint=None,
+        discovery=None,
+    )
+    gen = create_app(config)
+    connector = await gen.__anext__()
+    await connector.start()
+    pb = connector.sila_server.protobuf
+
+    channel = grpc.aio.insecure_channel(address)
+    try:
+        yield channel, pb
+    finally:
+        await channel.close()
+        await connector.stop()
+        with contextlib.suppress(StopAsyncIteration):
+            await gen.__anext__()
+
+
 @pytest_asyncio.fixture
 async def sila_channel(robot_address: str | None):
     """Yield (channel, pb).
