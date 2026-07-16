@@ -18,6 +18,7 @@ Typical call sequence for a pipette mount (mirrors Opentrons controller.py):
 """
 
 import json
+import typing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +26,10 @@ import opentrons_shared_data
 from unitelabs.cdk import sila
 
 from ..io import OT2MotionController
-from .motion_control import Axis
+from .motion_control import Axis, Mount
+
+if typing.TYPE_CHECKING:
+    from opentrons.hardware_control import HardwareControlAPI
 
 _TIPRACK_300UL_DIR = (
     Path(opentrons_shared_data.__file__).parent
@@ -57,6 +61,81 @@ class StepsPerMm:
 
     axis: Axis
     steps_per_mm: float
+
+
+@dataclass
+class AttitudeRow:
+    """One row of the 3x3 deck-calibration attitude matrix (dimensionless)."""
+
+    col_x: float
+    col_y: float
+    col_z: float
+
+
+@dataclass
+class DeckCalibration:
+    """
+    The robot's stored deck-calibration attitude and its provenance.
+
+    The attitude is the 3x3 matrix relating deck coordinates to machine
+    coordinates. OT-2 deck calibration carries no translation (the deck offset is
+    zero); clients should treat the offset as ``(0, 0, 0)``.
+    """
+
+    attitude: list[AttitudeRow]
+    source: str
+    """Where the calibration came from, e.g. ``"default"`` (never calibrated) or ``"user"``."""
+    last_modified: str
+    """ISO-8601 timestamp of the last calibration, or empty if never calibrated."""
+    marked_bad: bool
+    """True if the calibration has been flagged as bad and should not be trusted."""
+
+
+@dataclass
+class PipetteOffset:
+    """
+    The stored pipette-offset calibration for one mount.
+
+    The offset is the calibrated position correction (mm) applied to that
+    pipette. ``(0, 0, 0)`` with ``source="default"`` means the mount has not been
+    calibrated.
+    """
+
+    mount: Mount
+    x_mm: float
+    y_mm: float
+    z_mm: float
+    pipette_model: str
+    """Attached pipette model, e.g. ``"p300_multi_v2.1"`` (empty if none)."""
+    pipette_id: str
+    """Attached pipette serial/id (empty if none)."""
+    source: str
+    last_modified: str
+    """ISO-8601 timestamp of the last calibration, or empty if never calibrated."""
+
+
+class CalibrationUnavailableError(Exception):
+    """
+    The robot's stored calibration is not accessible.
+
+    Raised when the feature runs without ``with_robot_server=True`` — the
+    HardwareAPI that holds the stored calibration is not available in standalone
+    connector mode.
+    """
+
+
+class NoPipetteOnMountError(Exception):
+    """No pipette is attached to the requested mount, so it has no offset calibration."""
+
+
+def _source_str(source: object) -> str:
+    """Return a plain label for a calibration SourceType (e.g. ``"default"``)."""
+    return str(getattr(source, "value", source) or "")
+
+
+def _timestamp_str(timestamp: object) -> str:
+    """Return an ISO-8601 string for a datetime, or empty if there is none."""
+    return timestamp.isoformat() if timestamp is not None and hasattr(timestamp, "isoformat") else ""
 
 
 class CalibrationFeature(sila.Feature):
@@ -133,6 +212,70 @@ class CalibrationFeature(sila.Feature):
         """
         # Axis is required by the driver method signature but ignored for debounce.
         await self._controller.update_pipette_config("B", {"debounce": debounce_mm})
+
+    def _require_hw_api(self, command: str) -> "HardwareControlAPI":
+        """Return the HardwareAPI or raise if it is not available (standalone mode)."""
+        hw_api = self._controller._hw_api
+        if hw_api is None:
+            msg = (
+                f"{command} requires with_robot_server=True — the HardwareAPI holding "
+                "the stored calibration is not available in standalone connector mode."
+            )
+            raise CalibrationUnavailableError(msg)
+        return hw_api
+
+    @sila.UnobservableCommand(errors=[CalibrationUnavailableError])
+    async def get_deck_calibration(self) -> DeckCalibration:
+        """
+        Return the robot's stored deck-calibration attitude and provenance.
+
+        The attitude is the 3x3 matrix a client feeds to ``machine_from_deck`` to
+        convert deck coordinates to machine coordinates. OT-2 deck calibration
+        carries no translation, so the deck offset is zero.
+
+        Returns:
+            DeckCalibration with the attitude rows, source, timestamp, and bad flag.
+        """
+        hw_api = self._require_hw_api("get_deck_calibration")
+        deck = hw_api.robot_calibration.deck_calibration
+        rows = [AttitudeRow(col_x=float(r[0]), col_y=float(r[1]), col_z=float(r[2])) for r in deck.attitude]
+        return DeckCalibration(
+            attitude=rows,
+            source=_source_str(deck.source),
+            last_modified=_timestamp_str(deck.last_modified),
+            marked_bad=bool(getattr(deck.status, "markedBad", False)),
+        )
+
+    @sila.UnobservableCommand(errors=[CalibrationUnavailableError, NoPipetteOnMountError])
+    async def get_pipette_offset(self, mount: Mount) -> PipetteOffset:
+        """
+        Return the stored pipette-offset calibration for one mount.
+
+        Args:
+            mount: Which mount to read.
+
+        Returns:
+            PipetteOffset with the correction in mm, the attached pipette, and provenance.
+        """
+        from opentrons.types import Mount as OTMount
+
+        hw_api = self._require_hw_api("get_pipette_offset")
+        instrument = hw_api.hardware_instruments.get(OTMount[mount.name])
+        if instrument is None:
+            msg = f"no pipette attached to the {mount.name} mount"
+            raise NoPipetteOnMountError(msg)
+        calibration = instrument.pipette_offset
+        offset = calibration.offset
+        return PipetteOffset(
+            mount=mount,
+            x_mm=float(offset.x),
+            y_mm=float(offset.y),
+            z_mm=float(offset.z),
+            pipette_model=str(instrument.model or ""),
+            pipette_id=str(instrument.pipette_id or ""),
+            source=_source_str(calibration.source),
+            last_modified=_timestamp_str(calibration.last_modified),
+        )
 
     @sila.UnobservableCommand()
     async def get_right_mount_calibration(self) -> RightMountCalibration:
