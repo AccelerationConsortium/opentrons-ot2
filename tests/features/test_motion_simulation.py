@@ -22,7 +22,12 @@ What is NOT testable in simulation (driver no-ops):
 import pytest
 import pytest_asyncio
 
-from unitelabs.opentrons_ot2.features.motion_control import Axis, AxisPosition, MotionControlFeature
+from unitelabs.opentrons_ot2.features.motion_control import (
+    Axis,
+    AxisPosition,
+    MotionControlFeature,
+    OutOfBoundsError,
+)
 from unitelabs.opentrons_ot2.io.motion import OT2MotionController
 
 # Real homed positions reported by the Smoothie firmware defaults.
@@ -42,6 +47,54 @@ async def homed_feature(feature: MotionControlFeature) -> MotionControlFeature:
     """Feature with all axes already homed."""
     await feature.home(ALL_AXES)
     return feature
+
+
+def _with(position: AxisPosition, **overrides: float) -> AxisPosition:
+    axes = {ax: getattr(position, ax) for ax in "xyzabc"}
+    axes.update(overrides)
+    return AxisPosition(**axes)
+
+
+# ── Plunger bounds: the plunger axes travel negative (down to drop-tip) ────────
+
+
+async def test_move_to_allows_negative_plunger(homed_feature: MotionControlFeature):
+    """The plunger axes (B, C) accept negative targets (e.g. bottom / blow-out)."""
+    pos = await homed_feature.get_position()
+    result = await homed_feature.move_to(_with(pos, c=-30.0))
+    assert result.c == pytest.approx(-30.0)
+
+
+async def test_move_to_rejects_plunger_below_floor(homed_feature: MotionControlFeature):
+    """A plunger target below the software floor (-37 mm) is rejected."""
+    pos = await homed_feature.get_position()
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.move_to(_with(pos, c=-50.0))
+
+
+async def test_move_to_rejects_negative_gantry(homed_feature: MotionControlFeature):
+    """Gantry axes still reject negative targets."""
+    pos = await homed_feature.get_position()
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.move_to(_with(pos, x=-1.0))
+
+
+async def test_plunger_floor_is_dynamic_from_attached_pipette():
+    """The plunger floor comes from the attached pipette's drop-tip, not a constant."""
+    from opentrons.hardware_control import API
+    from opentrons.types import Mount as OTMount
+
+    hw = await API.build_hardware_simulator(
+        attached_instruments={OTMount.RIGHT: {"model": "p300_multi_v2.1", "id": "r"}},
+    )
+    try:
+        controller = await OT2MotionController.build(simulate=True)
+        controller._hw_api = hw
+        feature = MotionControlFeature(controller)
+        bounds = {b.axis.value: b.min_mm for b in feature.axis_bounds()}
+        assert bounds["C"] == pytest.approx(-33.4)  # p300_multi drop-tip (not the -37 fallback)
+    finally:
+        await hw.clean_up()
 
 
 # ── Basic state ──────────────────────────────────────────────────────────────
@@ -171,9 +224,13 @@ async def test_axis_bounds_returns_all_axes(feature):
 
 
 @pytest.mark.asyncio
-async def test_axis_bounds_min_is_zero(feature):
-    for b in feature.axis_bounds():
-        assert b.min_mm == 0.0
+async def test_axis_bounds_min_per_axis(feature):
+    """Gantry axes floor at 0; plunger axes (B, C) floor negative (drop-tip travel)."""
+    bounds = {b.axis.value: b.min_mm for b in feature.axis_bounds()}
+    for ax in ("X", "Y", "Z", "A"):
+        assert bounds[ax] == 0.0
+    assert bounds["B"] < 0.0
+    assert bounds["C"] < 0.0
 
 
 @pytest.mark.asyncio
@@ -225,12 +282,13 @@ async def test_move_relative_axis_within_bounds_ok(homed_feature):
 
 
 @pytest.mark.asyncio
-async def test_aspirate_below_zero_raises(homed_feature):
+async def test_aspirate_below_plunger_floor_raises(homed_feature):
     from unitelabs.opentrons_ot2.features.motion_control import Mount, OutOfBoundsError
 
-    # Plunger B homed at 19; aspirating 40 mm worth of volume drives it below 0.
+    # Plunger B homed at 19; aspirating 60 mm worth of volume drives it to -41,
+    # below the -37 mm plunger floor.
     with pytest.raises(OutOfBoundsError):
-        await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=200.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
+        await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=300.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
 
 
 @pytest.mark.asyncio

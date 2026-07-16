@@ -70,6 +70,13 @@ class Axis(enum.Enum):
 _AXIS_CHARS = "".join(ax.value for ax in Axis)
 _AxesStr = typing.Annotated[str, constraints.Pattern(rf"^[{_AXIS_CHARS}{_AXIS_CHARS.lower()}]+$")]
 
+# OT-2 plunger axes (B, C) travel to negative positions (down to the drop-tip).
+# Like opentrons, the real floor is per-pipette (the attached pipette's drop-tip
+# position); see MotionControlFeature._axis_lower_limit_mm. This is only the
+# fallback used when no pipette / HardwareAPI is available (bare simulator).
+_PLUNGER_AXES = frozenset({Axis.B, Axis.C})
+_PLUNGER_FALLBACK_FLOOR_MM = -37.0
+
 
 class BoardRevision(enum.Enum):
     """OT-2 hardware board revision read from GPIO pins at startup."""
@@ -346,16 +353,38 @@ class MotionControlFeature(sila.Feature):
     def axis_bounds(self) -> list[AxisBound]:
         """Software travel limits for each axis. Positions outside these bounds are rejected."""
         return [
-            AxisBound(axis=Axis(ax), min_mm=0.0, max_mm=max_mm) for ax, max_mm in self._controller.axis_bounds.items()
+            AxisBound(axis=Axis(ax), min_mm=self._axis_lower_limit_mm(Axis(ax)), max_mm=max_mm)
+            for ax, max_mm in self._controller.axis_bounds.items()
         ]
+
+    def _axis_lower_limit_mm(self, axis: Axis) -> float:
+        """
+        Software lower travel limit (mm) for an axis.
+
+        Gantry axes floor at 0. Plunger axes travel negative; opentrons has no
+        fixed plunger floor -- the range is defined by the attached pipette -- so
+        we source the floor from that pipette's drop-tip position via the
+        HardwareAPI, falling back to a conservative default when no pipette /
+        HardwareAPI is available (bare simulator).
+        """
+        if axis not in _PLUNGER_AXES:
+            return 0.0
+        hw_api = self._controller._hw_api
+        if hw_api is not None:
+            from opentrons.types import Mount as OTMount
+
+            instrument = hw_api.hardware_instruments.get(OTMount.LEFT if axis is Axis.B else OTMount.RIGHT)
+            if instrument is not None:
+                return float(instrument.plunger_positions.drop_tip)
+        return _PLUNGER_FALLBACK_FLOOR_MM
 
     def _check_bounds(self, axis: Axis, position_mm: float) -> None:
         """Raise OutOfBoundsError if position_mm is outside the axis software limit."""
         max_mm = self._controller.axis_bounds[axis.value]
-        if not (0.0 <= position_mm <= max_mm):
-            raise OutOfBoundsError(
-                f"Position {position_mm:.3f} mm is outside the {axis.value} axis software limit [0.0, {max_mm}] mm."
-            )
+        min_mm = self._axis_lower_limit_mm(axis)
+        if not (min_mm <= position_mm <= max_mm):
+            msg = f"Position {position_mm:.3f} mm is outside the {axis.value} axis limit [{min_mm}, {max_mm}] mm."
+            raise OutOfBoundsError(msg)
 
     @sila.UnobservableProperty()
     def is_simulating(self) -> bool:
