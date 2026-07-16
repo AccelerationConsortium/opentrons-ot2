@@ -171,8 +171,8 @@ async def test_current_position_homing_failures(proxy: HardwareProxy) -> None:
 # ── from_api shim ─────────────────────────────────────────────────────────────
 
 
-async def test_from_api_shares_driver_and_lock(api: API) -> None:
-    """OT2MotionController.from_api() must share the driver and lock with HardwareProxy."""
+async def test_from_api_shares_lock(api: API) -> None:
+    """OT2MotionController.from_api() must share the lock with HardwareProxy regardless of backend."""
     from unitelabs.opentrons_ot2.io.motion import OT2MotionController
 
     shared_lock = asyncio.Lock()
@@ -180,7 +180,134 @@ async def test_from_api_shares_driver_and_lock(api: API) -> None:
     controller = OT2MotionController.from_api(api, lock=shared_lock)
 
     assert controller._lock._lock is proxy._lock._lock is shared_lock
-    assert controller._driver is api._backend._smoothie_driver
+
+
+async def test_from_api_does_not_share_simulating_driver(api: API) -> None:
+    """On a Simulator backend, from_api() must NOT reuse backend._smoothie_driver.
+
+    Simulator implements its own move/home/position bookkeeping and only pokes its
+    _smoothie_driver (a bare SimulatingDriver) for a few incidental things — it never
+    asks it to move. SimulatingDriver doesn't implement the rest of the interface
+    OT2MotionController drives directly (move, position, probe_axis,
+    set_active_current, ...), so reusing it would let the controller silently
+    AttributeError the first time it tries to do anything beyond gantry homing.
+    """
+    from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController, _SimulatorStateSyncingDriver
+
+    assert isinstance(api._backend._smoothie_driver, SimulatingDriver)
+
+    controller = OT2MotionController.from_api(api, lock=asyncio.Lock())
+
+    assert controller._driver is not api._backend._smoothie_driver
+    assert isinstance(controller._driver, _SimulatorStateSyncingDriver)
+    assert isinstance(controller._driver._driver, SmoothieDriver)
+    assert controller._driver.simulating is True
+
+
+async def test_from_api_shares_real_driver_on_real_backend() -> None:
+    """On a real (Controller-backed) hw_api, from_api() must share its actual SmoothieDriver.
+
+    Controller forwards its own move/home/current methods straight to
+    _smoothie_driver, so on real hardware that object is the one true mover — the
+    opposite of the Simulator case above — and sharing it (rather than building a
+    second, disconnected driver) is required for the SiLA server and robot_server
+    to serialise access to the same physical board.
+    """
+    from opentrons.config.robot_configs import load_ot2
+    from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
+    from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController
+
+    real_driver = SmoothieDriver(config=load_ot2(), gpio_chardev=SimulatingGPIOCharDev("simulated"), connection=None)
+
+    class _FakeControllerBackend:
+        _smoothie_driver = real_driver
+        gpio_chardev = real_driver._gpio_chardev
+
+    class _FakeApi:
+        _backend = _FakeControllerBackend()
+
+    controller = OT2MotionController.from_api(_FakeApi(), lock=asyncio.Lock())
+
+    assert controller._driver is real_driver
+
+
+async def test_from_api_home_plunger_works_against_simulator(api: API) -> None:
+    """Regression test: homing a plunger axis through from_api() must not AttributeError.
+
+    This is the exact failure this fix addresses: _home_plunger() calls
+    self._driver.set_active_current(...), which SimulatingDriver (the object the
+    old code shared directly from the Simulator backend) does not implement.
+    """
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController
+
+    controller = OT2MotionController.from_api(api, lock=asyncio.Lock())
+    position = await controller.home("B")
+
+    assert "B" in position
+
+
+# ── Simulator state syncing (position visible to robot_server too) ────────────
+
+
+async def test_home_through_from_api_updates_backend_position(api: API) -> None:
+    """Homing via the standalone simulated driver must update Simulator's own _position.
+
+    Simulator implements update_position()/current_position() (what a robot_server
+    HTTP caller would see) from its own private _position dict, never from the
+    standalone driver from_api() builds. Without _SimulatorStateSyncingDriver, a
+    SiLA-driven home would be invisible to a concurrent HTTP caller.
+    """
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController
+
+    controller = OT2MotionController.from_api(api, lock=asyncio.Lock())
+    position = await controller.home("X")
+
+    backend_position = await api._backend.update_position()
+    assert backend_position["X"] == position["X"]
+
+
+async def test_move_through_from_api_updates_backend_position(api: API) -> None:
+    """A move via the standalone simulated driver must update Simulator's own _position."""
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController
+
+    controller = OT2MotionController.from_api(api, lock=asyncio.Lock())
+    await controller.home("X")
+    await controller._driver.move({"X": 42.0}, home_flagged_axes=False)
+
+    backend_position = await api._backend.update_position()
+    assert backend_position["X"] == 42.0
+
+
+async def test_home_through_from_api_updates_backend_homed_flags(api: API) -> None:
+    """Homing via the standalone simulated driver must update Simulator's is_homed() view.
+
+    is_homed()/_unhomed_axes() read api._backend._smoothie_driver.homed_flags — the
+    Simulator's own internal stub, never updated by the standalone driver without
+    the sync wrapper.
+    """
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController
+
+    controller = OT2MotionController.from_api(api, lock=asyncio.Lock())
+    assert api._backend.is_homed(["X"]) is False
+
+    await controller.home("X")
+
+    assert api._backend.is_homed(["X"]) is True
+
+
+async def test_disengage_axis_through_from_api_updates_backend_engaged_axes(api: API) -> None:
+    """Disengaging via the standalone simulated driver must update Simulator's engaged_axes()."""
+    from unitelabs.opentrons_ot2.io.motion import OT2MotionController
+
+    controller = OT2MotionController.from_api(api, lock=asyncio.Lock())
+    await controller.home("X")
+    assert api._backend.engaged_axes()["X"] is True
+
+    await controller.disengage_axes("X")
+
+    assert api._backend.engaged_axes()["X"] is False
 
 
 # ── Lock serialisation ────────────────────────────────────────────────────────
