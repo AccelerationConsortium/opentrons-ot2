@@ -98,6 +98,52 @@ class _RaisingSmoothieDriver(SmoothieDriver):
 # Default port on OT-2
 DEFAULT_SMOOTHIE_PORT = "/dev/ttyAMA0"
 
+
+class _SimulatorStateSyncingDriver:
+    """
+    Wraps a standalone simulated SmoothieDriver so SiLA-driven motion is also visible to Simulator.
+
+    Simulator implements its own move/home/probe/disengage_axes instead of
+    delegating to _smoothie_driver (see OT2MotionController.from_api), so without
+    this, a move made through this class would be invisible to robot_server's
+    current_position()/is_homed() even though this class's own view of the
+    standalone driver stays internally consistent. Not needed on real hardware —
+    Controller shares the exact same SmoothieDriver, so there's nothing to sync.
+    """
+
+    def __init__(self, driver: "SmoothieDriver", backend: object) -> None:
+        self._driver = driver
+        self._backend = backend
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._driver, name)
+
+    def _sync_backend_state(self) -> None:
+        self._backend._position.update(self._driver.position)
+        self._backend._engaged_axes.update(self._driver.engaged_axes)
+        self._backend._smoothie_driver._homed_flags.update(self._driver.homed_flags)
+
+    async def move(self, *args: object, **kwargs: object) -> None:
+        result = await self._driver.move(*args, **kwargs)
+        self._sync_backend_state()
+        return result
+
+    async def home(self, *args: object, **kwargs: object) -> dict[str, float]:
+        result = await self._driver.home(*args, **kwargs)
+        self._sync_backend_state()
+        return result
+
+    async def probe_axis(self, *args: object, **kwargs: object) -> dict[str, float]:
+        result = await self._driver.probe_axis(*args, **kwargs)
+        self._sync_backend_state()
+        return result
+
+    async def disengage_axis(self, *args: object, **kwargs: object) -> None:
+        result = await self._driver.disengage_axis(*args, **kwargs)
+        self._sync_backend_state()
+        return result
+
+
 # Plunger axes (left=B, right=C) home at their *active* current. The OT-2 robot
 # config default for plungers is 0.05 A (idle/holding level) — too little torque
 # to drive the plunger to its endstop, so a bare ``G28.2 B``/``C`` returns
@@ -232,7 +278,11 @@ class OT2MotionController:
         the rest of the interface this class drives directly (``move``, ``position``,
         ``probe_axis``, ``set_active_current``, ...), so it can't be shared the same
         way — we build a real (simulated) ``SmoothieDriver`` of our own instead, the
-        same one ``build(simulate=True)`` already uses.
+        same one ``build(simulate=True)`` already uses, wrapped in
+        ``_SimulatorStateSyncingDriver`` so motion made through it is also reflected
+        in ``Simulator``'s own position/engaged-axes/homed state — otherwise a SiLA
+        move would be invisible to a concurrent robot_server HTTP caller querying
+        ``current_position()``/``is_homed()`` in ``with_robot_server=True`` mode.
 
         Args:
             hw_api: An already-built HardwareControlAPI (OT-2, not OT-3).
@@ -254,10 +304,13 @@ class OT2MotionController:
                 "SmoothieDriver instead of sharing it",
                 type(backend._smoothie_driver).__name__,
             )
-            smoothie_driver = SmoothieDriver(
-                config=load_ot2(),
-                gpio_chardev=backend.gpio_chardev,
-                connection=None,  # None = simulation mode
+            smoothie_driver = _SimulatorStateSyncingDriver(
+                SmoothieDriver(
+                    config=load_ot2(),
+                    gpio_chardev=backend.gpio_chardev,
+                    connection=None,  # None = simulation mode
+                ),
+                backend=backend,
             )
         controller = cls(
             smoothie_driver=smoothie_driver,
