@@ -170,50 +170,19 @@ fail at import with `GLIBC_X.XX not found`. The two affected packages are:
 | `grpcio` | glibc 2.32+ | Compiled from source on Debian Stretch (glibc 2.24 cap) |
 | `rpds-py <0.30` | glibc 2.34+ | Upgrade to ≥0.30, which ships a `manylinux_2_17_armv7l` wheel (glibc 2.17+) |
 
-The `dist_arm/` directory contains a pre-built bundle of all wheels ready for offline
-installation on the robot.
+Deployment is three scripted steps — see **[`scripts/README.md`](scripts/README.md)** for
+the full command reference:
 
-### Building `dist_arm/`
+1. **Set up Tailscale** (one-time, per physical robot) — `scripts/setup_tailscale.sh`
+2. **Install the connector** (every deploy — builds/downloads wheels, deploys them,
+   installs the systemd service) — `scripts/setup_ot2.sh <host>`
+3. **Verify everything is up** — `scripts/verify_ot2.sh <host>`
 
-Trigger the **Build OT-2 ARM Wheels** GitHub Actions workflow (`.github/workflows/build-ot2-arm-wheels.yml`).
-It runs on a native `ubuntu-24.04-arm` runner, so arm32v7 containers execute without
-QEMU emulation. The multi-stage `Dockerfile.build` compiles grpcio from source on
-Debian Buster to keep glibc symbol requirements within what the OT-2 supports, then
-downloads all remaining dependencies as standard wheels.
-
-Download the `ot2-arm-wheels` artifact from the completed run and replace `dist_arm/`.
-
-### Installing on the OT-2
-
-SSH into the robot and copy the `dist_arm/` directory across:
-
-```sh
-scp -r dist_arm/ root@<ot2-ip>:/root/
-```
-
-Then on the robot:
-
-```sh
-bash /root/dist_arm/install.sh
-```
-
-Then install the connector as a persistent systemd service (disables the Opentrons robot server):
-
-```sh
-./scripts/install_connector_service.sh <ot2-ip>
-```
-
-To deploy Python source changes to a robot that already has the service installed:
-
-```sh
-./scripts/deploy_python_changes.sh <ot2-ip>
-```
-
-Logs:
-
-```sh
-ssh root@<ot2-ip> 'journalctl -u sila2-connector -f'
-```
+`scripts/setup_ot2.sh` triggers/downloads from the **Build OT-2 ARM Wheels** GitHub
+Actions workflow (`.github/workflows/build-ot2-arm-wheels.yml`), which runs on a native
+`ubuntu-24.04-arm` runner (so arm32v7 containers execute without QEMU emulation) and
+compiles `grpcio` from source on Debian Buster to keep glibc symbol requirements within
+what the OT-2 supports.
 
 ### Why `--system-site-packages`
 
