@@ -1,13 +1,20 @@
 #!/bin/sh
+# Install and start the Tailscale systemd service on the OT-2.
+# Assumes the Tailscale binary and auth key are already on the robot at /data
+# (run ./scripts/setup_tailscale.sh first to provision a brand-new robot).
 # Usage: ./scripts/install_tailscale_service.sh <host>
-# Example: ./scripts/install_tailscale_service.sh 192.168.1.19
 set -e
 
 HOST="${1:?Usage: $0 <host>}"
+SCRIPT_DIR="$(dirname "$0")"
+
+echo "Copying start_tailscale.sh to robot..."
+scp "$SCRIPT_DIR/start_tailscale.sh" "root@$HOST:/data/start_tailscale.sh"
 
 ssh "root@${HOST}" '
 set -e
 mount -o remount,rw /
+chmod +x /data/start_tailscale.sh
 
 cat > /etc/systemd/system/start-tailscale.service << EOF
 [Unit]
@@ -25,6 +32,6 @@ EOF
 
 systemctl daemon-reload
 systemctl enable start-tailscale
-systemctl start start-tailscale
+systemctl restart start-tailscale
 systemctl status start-tailscale --no-pager
 '
