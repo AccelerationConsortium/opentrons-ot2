@@ -35,15 +35,15 @@ echo ""
 echo "=== Downloading wheels from latest main build ==="
 rm -rf "$SCRIPT_DIR/dist_arm"
 mkdir -p "$SCRIPT_DIR/dist_arm"
-ZIP="/tmp/${ARTIFACT}.zip"
-if ! curl -sL --fail "https://github.com/$REPO/releases/download/ot2-latest/${ARTIFACT}.zip" -o "$ZIP"; then
-    echo "ERROR: could not download $ARTIFACT.zip from the 'ot2-latest' release."
+TARBALL="/tmp/${ARTIFACT}.tar.gz"
+if ! curl -sL --fail "https://github.com/$REPO/releases/download/ot2-latest/${ARTIFACT}.tar.gz" -o "$TARBALL"; then
+    echo "ERROR: could not download $ARTIFACT.tar.gz from the 'ot2-latest' release."
     echo "Has the 'Build OT-2 ARM Wheels' workflow finished on main yet? Check:"
     echo "  https://github.com/$REPO/releases/tag/ot2-latest"
     exit 1
 fi
-unzip -q -o "$ZIP" -d "$SCRIPT_DIR/dist_arm"
-rm -f "$ZIP"
+tar xzf "$TARBALL" -C "$SCRIPT_DIR/dist_arm"
+rm -f "$TARBALL"
 ls "$SCRIPT_DIR"/dist_arm/unitelabs_opentrons_ot2*.whl
 
 echo ""

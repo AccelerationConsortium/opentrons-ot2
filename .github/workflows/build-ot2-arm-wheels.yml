@@ -150,7 +150,8 @@ jobs:
   # Publishes both wheel sets to a rolling "ot2-latest" release so scripts/setup_ot2.sh
   # can download them with plain curl -- no gh CLI / auth token needed on the dev
   # machine, since (unlike workflow artifacts) public-repo release assets are
-  # downloadable unauthenticated.
+  # downloadable unauthenticated. Uses tar.gz rather than zip: tar ships by default on
+  # macOS, Linux, and Windows 10+, so extraction needs no extra tool installed either.
   publish-release:
     needs: [build-ot2-arm-wheels-py310, build-ot2-arm-wheels-py312]
     if: github.ref == 'refs/heads/main'
@@ -168,10 +169,10 @@ jobs:
           name: ot2-arm-wheels-py312
           path: dist_arm_py312
 
-      - name: Zip wheel sets
+      - name: Tar wheel sets
         run: |
-          (cd dist_arm && zip -r ../ot2-arm-wheels-py310.zip .)
-          (cd dist_arm_py312 && zip -r ../ot2-arm-wheels-py312.zip .)
+          tar czf ot2-arm-wheels-py310.tar.gz -C dist_arm .
+          tar czf ot2-arm-wheels-py312.tar.gz -C dist_arm_py312 .
 
       - name: Publish/update rolling release
         uses: softprops/action-gh-release@v2
@@ -181,5 +182,5 @@ jobs:
           body: "Automatically updated on every push to main. Built from ${{ github.sha }}."
           make_latest: true
           files: |
-            ot2-arm-wheels-py310.zip
-            ot2-arm-wheels-py312.zip
+            ot2-arm-wheels-py310.tar.gz
+            ot2-arm-wheels-py312.tar.gz
