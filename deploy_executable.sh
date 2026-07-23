@@ -34,6 +34,10 @@ echo "Binary:    $CONNECTOR_DIR/connector"
 echo "Install:   $INSTALL_PATH/connector"
 
 echo ""
+echo "Stopping sila2-connector (if running) so its binary isn't busy while we overwrite it ..."
+ssh "root@$HOST" "systemctl stop sila2-connector 2>/dev/null || true"
+
+echo ""
 echo "Copying connector binary to $HOST ..."
 ssh "root@$HOST" "mount -o remount,rw / && mkdir -p $INSTALL_PATH"
 scp -O "$SCRIPT_DIR/$CONNECTOR_DIR/connector" "root@$HOST:$INSTALL_PATH/connector"
