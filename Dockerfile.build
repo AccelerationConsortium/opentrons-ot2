@@ -16,13 +16,23 @@ RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-
         zlib1g-dev \
         libffi-dev \
         libsqlite3-dev \
+        libbz2-dev \
+        liblzma-dev \
+        libgdbm-dev \
         wget \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-# libsqlite3-dev must be present before Python compiles below, or CPython silently
-# skips building the _sqlite3 module (no build failure, just a missing stdlib module).
-# robot_server's persistence layer needs it -- confirmed by a real ModuleNotFoundError
-# on hardware ("No module named '_sqlite3'") once robot_server actually started.
+# These -dev packages must be present before Python compiles below, or CPython silently
+# skips building the corresponding stdlib module (no build failure, just a module gap
+# that surfaces later as a ModuleNotFoundError wherever something imports it -- this is
+# exactly how the _sqlite3 gap was found, via a real crash on hardware). Confirmed via
+# CPython's own build summary ("necessary bits ... were not found") which of the
+# skippable optional modules were missing; added the ones with unconditional-import
+# risk here (bz2/lzma/dbm/gdbm -- opentrons_shared_data bundles a lot of data, and any
+# of these could plausibly be hit loading it). Left out as genuinely inapplicable to a
+# headless daemon: _tkinter, _curses/_curses_panel, readline. Left out _uuid: Python's
+# uuid module has a documented pure-Python fallback when this C extension is missing,
+# unlike the others which are unconditional imports that raise if absent.
 
 # OpenSSL 1.1.1 from source — stretch-backports doesn't reliably override configure detection
 RUN wget -q https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
