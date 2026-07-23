@@ -8,7 +8,7 @@ HOST="${1:?Usage: $0 <host>}"
 SCRIPT_DIR="$(dirname "$0")"
 
 echo "Copying start_connector.sh to robot..."
-scp "$SCRIPT_DIR/start_connector.sh" "root@$HOST:/data/start_connector.sh"
+scp -O "$SCRIPT_DIR/start_connector.sh" "root@$HOST:/data/start_connector.sh"
 
 ssh "root@${HOST}" '
 set -e

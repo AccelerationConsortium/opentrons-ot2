@@ -9,7 +9,7 @@ HOST="${1:?Usage: $0 <host>}"
 SCRIPT_DIR="$(dirname "$0")"
 
 echo "Copying start_tailscale.sh to robot..."
-scp "$SCRIPT_DIR/start_tailscale.sh" "root@$HOST:/data/start_tailscale.sh"
+scp -O "$SCRIPT_DIR/start_tailscale.sh" "root@$HOST:/data/start_tailscale.sh"
 
 ssh "root@${HOST}" '
 set -e
