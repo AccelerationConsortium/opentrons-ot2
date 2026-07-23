@@ -15,9 +15,14 @@ RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/10no-check-
         build-essential \
         zlib1g-dev \
         libffi-dev \
+        libsqlite3-dev \
         wget \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+# libsqlite3-dev must be present before Python compiles below, or CPython silently
+# skips building the _sqlite3 module (no build failure, just a missing stdlib module).
+# robot_server's persistence layer needs it -- confirmed by a real ModuleNotFoundError
+# on hardware ("No module named '_sqlite3'") once robot_server actually started.
 
 # OpenSSL 1.1.1 from source — stretch-backports doesn't reliably override configure detection
 RUN wget -q https://www.openssl.org/source/openssl-1.1.1w.tar.gz && \
