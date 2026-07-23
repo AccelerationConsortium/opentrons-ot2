@@ -33,11 +33,7 @@ Type=simple
 # /tmp is a small RAM-backed tmpfs (about 450M on this hardware) -- too small for
 # this bundle (robot_server plus its full dep set) and shared with anything else
 # that uses /tmp. /var/sila2_ot2/tmp is on real storage with room to spare.
-# ExecStartPre creates it and clears any previous run leftover extraction dir
-# (only ever PyInstaller own _MEI-prefixed directories; the leading dash on the
-# second ExecStartPre line makes systemd ignore a nonzero exit from it).
 ExecStartPre=/bin/mkdir -p /var/sila2_ot2/tmp
-ExecStartPre=-/bin/sh -c "rm -rf /var/sila2_ot2/tmp/_MEI*"
 ExecStart=/var/sila2_ot2/connector start --app unitelabs.opentrons_ot2:create_app --config-path /var/sila2_ot2/config.json
 Environment=RUNNING_ON_PI=true
 Environment=OT_SMOOTHIE_ID=AMA
