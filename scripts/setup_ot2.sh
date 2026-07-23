@@ -1,9 +1,12 @@
 #!/bin/sh
-# Deploy the latest successful "main" build to the OT-2.
-# Checks the robot's architecture and Python version before doing anything else,
-# so an incompatible wheel set is never pushed. Downloads wheels from the rolling
-# "ot2-latest" GitHub Release (published by .github/workflows/build-ot2-arm-wheels.yml
-# on every push to main) via plain curl -- no gh CLI or auth token required.
+# Deploy the latest successful "main" build to the OT-2 as a self-contained binary --
+# no venv, no pip, no Python required on the robot at all.
+# Checks the robot's architecture and Python version before doing anything else, so an
+# incompatible build is never pushed (the OT-2 generation determines which of the two
+# binary variants applies -- see Dockerfile.build vs Dockerfile.build.py312).
+# Downloads from the rolling "ot2-latest" GitHub Release (published by
+# .github/workflows/build-ot2-arm-wheels.yml on every push to main) via plain curl --
+# no gh CLI or auth token required.
 #
 # Usage: ./scripts/setup_ot2.sh <host>
 set -e
@@ -22,8 +25,8 @@ if [ "$ARCH" != "armv7l" ]; then
 fi
 
 case "$PYVER" in
-    3.10) ARTIFACT="ot2-arm-wheels-py310" ;;
-    3.12) ARTIFACT="ot2-arm-wheels-py312" ;;
+    3.10) ARTIFACT="ot2-connector-arm-py310" ;;
+    3.12) ARTIFACT="ot2-connector-arm-py312" ;;
     *)
         echo "ERROR: unsupported robot Python '$PYVER' (expected 3.10 or 3.12). Refusing to deploy."
         exit 1
@@ -32,9 +35,9 @@ esac
 echo "Robot: arch=$ARCH python=$PYVER -> $ARTIFACT"
 
 echo ""
-echo "=== Downloading wheels from latest main build ==="
-rm -rf "$SCRIPT_DIR/dist_arm"
-mkdir -p "$SCRIPT_DIR/dist_arm"
+echo "=== Downloading connector binary from latest main build ==="
+rm -rf "$SCRIPT_DIR/dist_connector"
+mkdir -p "$SCRIPT_DIR/dist_connector"
 TARBALL="/tmp/${ARTIFACT}.tar.gz"
 if ! curl -sL --fail "https://github.com/$REPO/releases/download/ot2-latest/${ARTIFACT}.tar.gz" -o "$TARBALL"; then
     echo "ERROR: could not download $ARTIFACT.tar.gz from the 'ot2-latest' release."
@@ -42,13 +45,13 @@ if ! curl -sL --fail "https://github.com/$REPO/releases/download/ot2-latest/${AR
     echo "  https://github.com/$REPO/releases/tag/ot2-latest"
     exit 1
 fi
-tar xzf "$TARBALL" -C "$SCRIPT_DIR/dist_arm"
+tar xzf "$TARBALL" -C "$SCRIPT_DIR/dist_connector"
 rm -f "$TARBALL"
-ls "$SCRIPT_DIR"/dist_arm/unitelabs_opentrons_ot2*.whl
+ls "$SCRIPT_DIR/dist_connector/connector"
 
 echo ""
 echo "=== Deploying ==="
-sh "$SCRIPT_DIR/deploy.sh" "$HOST" dist_arm
+sh "$SCRIPT_DIR/deploy_executable.sh" "$HOST" dist_connector
 sh "$SCRIPT_DIR/scripts/install_connector_service.sh" "$HOST"
 
 echo ""

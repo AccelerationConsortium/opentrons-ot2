@@ -170,12 +170,17 @@ fail at import with `GLIBC_X.XX not found`. The two affected packages are:
 | `grpcio` | glibc 2.32+ | Compiled from source on Debian Stretch (glibc 2.24 cap) |
 | `rpds-py <0.30` | glibc 2.34+ | Upgrade to ≥0.30, which ships a `manylinux_2_17_armv7l` wheel (glibc 2.17+) |
 
+The connector is deployed to the robot as a single self-contained binary (built with
+PyInstaller) — no venv, no `pip`, no Python installation required on the robot at all.
+Everything the connector needs, including `opentrons` and a compatible `pydantic`, is
+bundled into that one binary; there is no venv-based deployment path.
+
 Deployment is three scripted steps — see **[`scripts/README.md`](scripts/README.md)** for
 the full command reference:
 
 1. **Set up Tailscale** (one-time, per physical robot) — `scripts/setup_tailscale.sh`
-2. **Install the connector** (every deploy — builds/downloads wheels, deploys them,
-   installs the systemd service) — `scripts/setup_ot2.sh <host>`
+2. **Install the connector** (every deploy — downloads the binary, deploys it, installs
+   the systemd service) — `scripts/setup_ot2.sh <host>`
 3. **Verify everything is up** — `scripts/verify_ot2.sh <host>`
 
 `scripts/setup_ot2.sh` triggers/downloads from the **Build OT-2 ARM Wheels** GitHub
@@ -183,12 +188,6 @@ Actions workflow (`.github/workflows/build-ot2-arm-wheels.yml`), which runs on a
 `ubuntu-24.04-arm` runner (so arm32v7 containers execute without QEMU emulation) and
 compiles `grpcio` from source on Debian Buster to keep glibc symbol requirements within
 what the OT-2 supports.
-
-### Why `--system-site-packages`
-
-The `opentrons` package (and its `opentrons-shared-data` companion) are pre-installed
-as system packages by Opentrons firmware. They are intentionally excluded from
-`dist_arm/` to avoid version conflicts. The venv inherits them via `--system-site-packages`.
 
 ## Usage
 

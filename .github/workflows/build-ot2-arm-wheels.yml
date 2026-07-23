@@ -22,18 +22,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build ARM wheel image (py310)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.build
-          platforms: linux/arm/v7
-          load: true
-          tags: ot2-wheel-builder-py310
-          target: builder
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Build connector executable
         uses: docker/build-push-action@v6
         with:
@@ -45,13 +33,6 @@ jobs:
           target: pyinstaller-builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Extract wheels
-        run: |
-          id=$(docker create ot2-wheel-builder-py310)
-          docker cp $id:/output dist_arm
-          docker rm $id
-          ls -la dist_arm/
 
       - name: Extract connector binary
         run: |
@@ -65,13 +46,6 @@ jobs:
       - name: Smoke-test connector binary (py310)
         run: docker run --rm --platform linux/arm/v7 ot2-exe-builder /exe-output/connector --help
 
-      - name: Upload wheels artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ot2-arm-wheels-py310
-          path: dist_arm/
-          retention-days: 28
-
       - name: Upload connector artifact (py310)
         uses: actions/upload-artifact@v4
         with:
@@ -81,7 +55,9 @@ jobs:
 
   # New OT-2: Python 3.12, Buildroot, glibc 2.40.
   # No compilation needed — grpcio has a native cp312/linux_armv7l PyPI wheel.
-  # opentrons, numpy, gpiod come from the robot system via --system-site-packages.
+  # The connector binary is fully self-contained: opentrons, numpy, gpiod, and
+  # pydantic are all bundled into it (see Dockerfile.build.py312's pyinstaller-builder
+  # stage) — no reliance on anything present on the robot's system Python.
   build-ot2-arm-wheels-py312:
     runs-on: ubuntu-24.04-arm
     steps:
@@ -89,18 +65,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Build ARM wheel image (py312)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.build.py312
-          platforms: linux/arm/v7
-          load: true
-          tags: ot2-wheel-builder-py312
-          target: builder
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Build connector executable (py312)
         uses: docker/build-push-action@v6
@@ -114,13 +78,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Extract wheels
-        run: |
-          id=$(docker create ot2-wheel-builder-py312)
-          docker cp $id:/output dist_arm_py312
-          docker rm $id
-          ls -la dist_arm_py312/
-
       - name: Extract connector binary (py312)
         run: |
           mkdir -p dist_connector_py312
@@ -133,13 +90,6 @@ jobs:
       - name: Smoke-test connector binary (py312)
         run: docker run --rm --platform linux/arm/v7 ot2-exe-builder-py312 /exe-output/connector --help
 
-      - name: Upload wheels artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ot2-arm-wheels-py312
-          path: dist_arm_py312/
-          retention-days: 28
-
       - name: Upload connector artifact (py312)
         uses: actions/upload-artifact@v4
         with:
@@ -147,11 +97,11 @@ jobs:
           path: dist_connector_py312/
           retention-days: 28
 
-  # Publishes both wheel sets to a rolling "ot2-latest" release so scripts/setup_ot2.sh
-  # can download them with plain curl -- no gh CLI / auth token needed on the dev
-  # machine, since (unlike workflow artifacts) public-repo release assets are
-  # downloadable unauthenticated. Uses tar.gz rather than zip: tar ships by default on
-  # macOS, Linux, and Windows 10+, so extraction needs no extra tool installed either.
+  # Publishes both connector binaries to a rolling "ot2-latest" release so
+  # scripts/setup_ot2.sh can download them with plain curl -- no gh CLI / auth token
+  # needed on the dev machine, since (unlike workflow artifacts) public-repo release
+  # assets are downloadable unauthenticated. Uses tar.gz rather than zip: tar ships by
+  # default on macOS, Linux, and Windows 10+, so extraction needs no extra tool either.
   publish-release:
     needs: [build-ot2-arm-wheels-py310, build-ot2-arm-wheels-py312]
     if: github.ref == 'refs/heads/main'
@@ -161,26 +111,26 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ot2-arm-wheels-py310
-          path: dist_arm
+          name: ot2-connector-arm-py310
+          path: dist_connector
 
       - uses: actions/download-artifact@v4
         with:
-          name: ot2-arm-wheels-py312
-          path: dist_arm_py312
+          name: ot2-connector-arm-py312
+          path: dist_connector_py312
 
-      - name: Tar wheel sets
+      - name: Tar connector binaries
         run: |
-          tar czf ot2-arm-wheels-py310.tar.gz -C dist_arm .
-          tar czf ot2-arm-wheels-py312.tar.gz -C dist_arm_py312 .
+          tar czf ot2-connector-arm-py310.tar.gz -C dist_connector .
+          tar czf ot2-connector-arm-py312.tar.gz -C dist_connector_py312 .
 
       - name: Publish/update rolling release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ot2-latest
-          name: "OT-2 ARM wheels (latest main)"
+          name: "OT-2 connector binary (latest main)"
           body: "Automatically updated on every push to main. Built from ${{ github.sha }}."
           make_latest: true
           files: |
-            ot2-arm-wheels-py310.tar.gz
-            ot2-arm-wheels-py312.tar.gz
+            ot2-connector-arm-py310.tar.gz
+            ot2-connector-arm-py312.tar.gz
