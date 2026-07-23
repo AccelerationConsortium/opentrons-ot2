@@ -106,6 +106,12 @@ RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
 FROM arm32v7/python:3.10-slim-bookworm AS builder
 
 WORKDIR /build
+# git: needed below to pip-download robot_server and its monorepo siblings from source
+# (not on PyPI); slim-bookworm doesn't include it by default. build-essential (g++):
+# needed to compile greenlet, a transitive dep SQLAlchemy pulls in further below.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git build-essential && \
+    rm -rf /var/lib/apt/lists/*
 RUN pip install --upgrade pip wheel build uv
 
 COPY pyproject.toml README.md ./
@@ -117,22 +123,22 @@ COPY config/ config/
 # uv pip compile resolves the full dep tree from pyproject.toml. Python version
 # markers in pyproject.toml select opentrons==8.8.1 and numpy<1.25 for py310.
 #
-# Packages excluded from pip download (compiled from source in earlier stages):
+# Packages excluded from pip download (provided some other way below):
 #   - grpcio==1.46.3: no pre-built armv7l wheel on PyPI for glibc 2.24; compiled
 #     in grpcio-builder stage. Overridden here so uv captures six>=1.5.2 as a
 #     transitive dep (latest grpcio dropped six from its declared deps).
 #   - numpy: compiled without BLAS/LAPACK; libopenblas is absent on the OT-2
 #   - gpiod: opentrons undeclared dep; PyPI "gpiod" is an unrelated ctypes wrapper;
 #     official libgpiod 1.x bindings built from source in gpiod-builder stage
-#   - pydantic/pydantic-core/pydantic-settings: system versions must be used so
-#     the system fastapi 0.100.0 that robot_server depends on is not broken by a
-#     newer pydantic API (FieldInfo.in_ removed in newer pydantic)
+#   - pydantic, opentrons, uvicorn, wsproto: bundled below instead, as part of a
+#     single internally-consistent set with robot_server (see next RUN) -- see
+#     that comment for why.
 RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
     printf 'grpcio==1.46.3\n' > /tmp/overrides.txt && \
     uv pip compile --python-version 3.10 --override /tmp/overrides.txt pyproject.toml > /tmp/resolved.txt && \
-    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic\|^opentrons\|^uvicorn\|^wsproto\|^python-dotenv' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 310 --implementation cp --abi cp310 \
@@ -141,6 +147,67 @@ RUN python -m build --wheel && \
 COPY --from=numpy-builder /numpy-output/numpy-*.whl /output/
 COPY --from=grpc-builder /grpc-output/grpcio-*.whl /output/
 COPY --from=gpiod-builder /gpiod-output/gpiod-*.whl /output/
+
+# robot_server is not on PyPI -- only in the Opentrons monorepo on GitHub. Different
+# physical OT-2 units have drifted to different system fastapi/pydantic versions
+# (confirmed: one robot has fastapi 0.100.0/pydantic 2.11.7, another has the much
+# older fastapi 0.99.1/pydantic 1.10.12 -- real pydantic v1, incompatible with this
+# project's own pydantic-v2-only code in one process). Bundling one fixed,
+# internally-consistent set ourselves -- instead of relying on whatever a given
+# robot's system happens to have -- removes that variability entirely. This mirrors
+# .github/workflows/test.yml's own robot_server integration tests exactly, which
+# already prove this combination works together.
+#
+# opentrons/opentrons_shared_data/opentrons_hardware are reinstalled from git (not
+# just the PyPI opentrons==8.8.1 wheel above) because the PyPI build omits symbols
+# robot_server imports (opentrons_shared_data.util, opentrons_hardware itself, etc).
+# pip wheel (not pip download): pip download saves a VCS source as a raw .zip source
+# tree, not an actual .whl -- confirmed directly -- so the later `pip install
+# /wheels/*.whl` would silently skip it. pip wheel builds and saves a real wheel, same
+# tool already used for gpiod/numpy above. No --platform/--abi flags: these are
+# pure-Python VCS sources pip must build, and this container already IS the target
+# arch/Python version, so it builds correctly without them.
+RUN pip wheel --no-deps --wheel-dir=/output/ \
+        "opentrons @ git+https://github.com/Opentrons/opentrons.git@v8.8.1#subdirectory=api" \
+        "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v8.8.1#subdirectory=shared-data" \
+        "opentrons_hardware @ git+https://github.com/Opentrons/opentrons.git@v8.8.1#subdirectory=hardware" \
+        "robot_server @ git+https://github.com/Opentrons/opentrons.git@v8.8.1#subdirectory=robot-server" \
+        "server_utils @ git+https://github.com/Opentrons/opentrons.git@v8.8.1#subdirectory=server-utils"
+
+# robot_server's own non-monorepo runtime deps, pinned to the exact versions
+# .github/workflows/test.yml already proves compatible with it. --only-binary=:all:
+# (required alongside --platform/--python-version/--abi unless --no-deps is used) is
+# fine here -- unlike aiohttp/sqlalchemy below, transitive deps of this set (starlette,
+# anyio, click, h11, etc.) are expected to have ordinary prebuilt wheels.
+RUN pip download -d /output/ \
+        --platform manylinux_2_17_armv7l --platform linux_armv7l \
+        --python-version 310 --implementation cp --abi cp310 --only-binary=:all: \
+        "fastapi==0.100.0" \
+        "pydantic==2.11.7" \
+        "pydantic-settings==2.4.0" \
+        "python-dotenv==1.0.1" \
+        "python-multipart==0.0.6" \
+        "uvicorn==0.27.0.post1" \
+        "wsproto==1.2.0"
+
+# paho-mqtt==1.6.1 only ever published an sdist, no wheel -- --only-binary=:all: above
+# would reject it. It's pure Python with no deps of its own, so build it directly with
+# no platform restriction (same reasoning as the git packages above). pip wheel, not
+# pip download -- see comment above the git packages for why.
+RUN pip wheel --no-deps --wheel-dir=/output/ "paho-mqtt==1.6.1"
+
+# aiohttp and sqlalchemy==1.4.51 have no prebuilt armv7l wheels for cp310 (checked
+# directly against piwheels.org, the actual ARM-wheel repo the Raspberry-Pi-like OT-2
+# ecosystem would use -- confirmed empirically, not assumed). Both have official,
+# documented pure-Python build modes, which sidestep needing a cross-compile toolchain
+# entirely since a pure-Python wheel has no architecture dependency:
+#   - aiohttp: AIOHTTP_NO_EXTENSIONS=1 (aiohttp's own setup.py / release notes)
+#   - SQLAlchemy: DISABLE_SQLALCHEMY_CEXT=1 (documented since 0.8.6/0.9.4)
+# pip wheel, not pip download -- see comment above the git packages for why.
+RUN AIOHTTP_NO_EXTENSIONS=1 DISABLE_SQLALCHEMY_CEXT=1 \
+    pip wheel --no-binary aiohttp --no-binary sqlalchemy --wheel-dir=/output/ \
+        "aiohttp" \
+        "sqlalchemy==1.4.51"
 
 
 # Stage 5: Build single self-contained connector binary using PyInstaller.
@@ -153,16 +220,9 @@ FROM gpiod-builder AS pyinstaller-builder
 COPY --from=builder /output/ /wheels/
 
 # Install all wheels into the Stretch Python 3.10 environment.
-# --no-deps: every required package is already in /wheels/; no PyPI lookups needed.
-# pydantic was excluded from /output -- add it back here pinned to the exact version
-# .github/workflows/test.yml's own robot_server integration tests prove compatible.
-# robot_server (imported from OT-2 system site-packages at runtime -- see
-# _create_app_with_robot_server) does `from pydantic.fields import Undefined` via its
-# system fastapi; since our own code imports pydantic first, that's what robot_server's
-# import resolves to too (Python caches modules by name before consulting sys.path at
-# all), so an unpinned/newer pydantic here breaks robot_server with an ImportError.
-RUN /usr/local/bin/pip3 install --no-deps /wheels/*.whl && \
-    /usr/local/bin/pip3 install "pydantic==2.11.7" "pydantic-settings==2.4.0"
+# --no-deps: every required package -- including robot_server and its full matched
+# dependency set -- is already in /wheels/; no PyPI/git lookups needed here.
+RUN /usr/local/bin/pip3 install --no-deps /wheels/*.whl
 
 # Build the PyInstaller bootloader from source for armv7l on Stretch (glibc 2.24).
 # PyInstaller ships pre-built bootloaders for x86/x86_64/aarch64 only — not armv7l.
@@ -178,7 +238,7 @@ RUN /usr/local/bin/pip3 install pyinstaller-hooks-contrib && \
     rm -rf pyinstaller-5.13.2 v5.13.2.tar.gz
 
 # Smoke-test imports before PyInstaller runs — fails fast if any package is missing.
-RUN /usr/local/bin/python3 -c "import grpc, gpiod, opentrons, numpy, unitelabs.opentrons_ot2; print('imports OK: grpc=%s numpy=%s' % (grpc.__version__, numpy.__version__))"
+RUN /usr/local/bin/python3 -c "import grpc, gpiod, opentrons, numpy, robot_server, unitelabs.opentrons_ot2; print('imports OK: grpc=%s numpy=%s' % (grpc.__version__, numpy.__version__))"
 
 # Build the connector binary.
 # Entry point: /usr/local/bin/connector — the console_scripts shim written by pip when
@@ -194,6 +254,8 @@ RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
         --collect-all opentrons_shared_data \
         --collect-all unitelabs \
         --collect-all zeroconf \
+        --collect-all robot_server \
+        --collect-all fastapi \
         --hidden-import grpc._cython.cygrpc \
         --add-binary '/usr/local/lib/libgpiod.so.2:.' \
         --distpath /exe-output/ \
@@ -201,3 +263,22 @@ RUN _PYTHON_HOST_PLATFORM=linux-armv7l \
 
 # Smoke-test the frozen binary itself — catches missing hidden imports and data files.
 RUN /exe-output/connector --help
+
+# Real smoke test: actually start the app with with_robot_server=true (simulator mode)
+# and confirm it reaches a running state instead of crashing during create_app(). This
+# is the exact path that broke before (robot_server/pydantic/fastapi) and that --help
+# alone never exercises. Fully testable in CI now that robot_server no longer depends
+# on anything present on a real robot's system Python.
+COPY config/ot2_config.json /tmp/ot2_config.json
+RUN /usr/local/bin/python3 -c "\
+import json; \
+cfg = json.load(open('/tmp/ot2_config.json')); \
+cfg['use_simulator'] = True; \
+cfg['with_robot_server'] = True; \
+cfg['robot_server_tcp_port'] = 8080; \
+cfg['sila_server']['port'] = 0; \
+json.dump(cfg, open('/tmp/smoke_config.json', 'w'))" && \
+    (timeout 20 /exe-output/connector start --app unitelabs.opentrons_ot2:create_app --config-path /tmp/smoke_config.json > /tmp/smoke.log 2>&1 &) && \
+    sleep 15 && \
+    cat /tmp/smoke.log && \
+    grep -q "SiLA server listening" /tmp/smoke.log
