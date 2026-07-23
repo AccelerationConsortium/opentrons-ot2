@@ -5,6 +5,11 @@ or **verify the robot is up**. Every script is meant to be run from the repo roo
 (`sh scripts/<name>.sh <host>`), never inlined by hand on the robot — see AGENTS.md's
 "Hardware Driver Rules" / canonical-scripts convention.
 
+**Requirements on the machine you run these from:** a POSIX shell (`sh`), an SSH client
+(`ssh`/`scp`) with key-based auth to the robot already working, `curl`, and `unzip`. No
+GitHub CLI (`gh`) or auth token needed — `setup_ot2.sh` downloads wheels from a public
+release asset, which doesn't require authentication.
+
 ## The 3-step flow
 
 ### 1. Set up Tailscale — `setup_tailscale.sh` (one-time, per physical robot)
@@ -28,8 +33,8 @@ This is the script you run to ship the latest `main` to a robot. It:
 1. Checks the robot's architecture and Python version over SSH first, and refuses to
    continue if there's no matching wheel build — so an incompatible wheel set is never
    pushed.
-2. Downloads the matching wheels from the latest successful "Build OT-2 ARM Wheels" run
-   on `main`.
+2. Downloads the matching wheels via `curl` from the rolling `ot2-latest` GitHub Release
+   (published automatically on every push to `main`).
 3. Calls `deploy.sh` (installs the wheels + config into `/var/sila2_ot2`) and
    `install_connector_service.sh` (writes/enables/restarts the `sila2-connector`
    systemd service).

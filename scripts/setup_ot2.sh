@@ -1,7 +1,9 @@
 #!/bin/sh
 # Deploy the latest successful "main" build to the OT-2.
 # Checks the robot's architecture and Python version before doing anything else,
-# so an incompatible wheel set is never pushed.
+# so an incompatible wheel set is never pushed. Downloads wheels from the rolling
+# "ot2-latest" GitHub Release (published by .github/workflows/build-ot2-arm-wheels.yml
+# on every push to main) via plain curl -- no gh CLI or auth token required.
 #
 # Usage: ./scripts/setup_ot2.sh <host>
 set -e
@@ -30,18 +32,18 @@ esac
 echo "Robot: arch=$ARCH python=$PYVER -> $ARTIFACT"
 
 echo ""
-echo "=== Finding latest successful ARM wheel build on main ==="
-RUN_ID="$(gh run list --repo "$REPO" --workflow build-ot2-arm-wheels.yml --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
-if [ -z "$RUN_ID" ]; then
-    echo "ERROR: no successful 'Build OT-2 ARM Wheels' run found on main."
+echo "=== Downloading wheels from latest main build ==="
+rm -rf "$SCRIPT_DIR/dist_arm"
+mkdir -p "$SCRIPT_DIR/dist_arm"
+ZIP="/tmp/${ARTIFACT}.zip"
+if ! curl -sL --fail "https://github.com/$REPO/releases/download/ot2-latest/${ARTIFACT}.zip" -o "$ZIP"; then
+    echo "ERROR: could not download $ARTIFACT.zip from the 'ot2-latest' release."
+    echo "Has the 'Build OT-2 ARM Wheels' workflow finished on main yet? Check:"
+    echo "  https://github.com/$REPO/releases/tag/ot2-latest"
     exit 1
 fi
-echo "Using run $RUN_ID"
-
-echo ""
-echo "=== Downloading wheels ==="
-rm -rf "$SCRIPT_DIR/dist_arm"
-gh run download "$RUN_ID" --repo "$REPO" --name "$ARTIFACT" --dir "$SCRIPT_DIR/dist_arm"
+unzip -q -o "$ZIP" -d "$SCRIPT_DIR/dist_arm"
+rm -f "$ZIP"
 ls "$SCRIPT_DIR"/dist_arm/unitelabs_opentrons_ot2*.whl
 
 echo ""
