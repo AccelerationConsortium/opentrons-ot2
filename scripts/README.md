@@ -6,9 +6,10 @@ or **verify the robot is up**. Every script is meant to be run from the repo roo
 "Hardware Driver Rules" / canonical-scripts convention.
 
 **Requirements on the machine you run these from:** a POSIX shell (`sh`), an SSH client
-(`ssh`/`scp`) with key-based auth to the robot already working, `curl`, and `unzip`. No
-GitHub CLI (`gh`) or auth token needed — `setup_ot2.sh` downloads wheels from a public
-release asset, which doesn't require authentication.
+(`ssh`/`scp`) with key-based auth to the robot already working, `curl`, and `tar` — all
+of which already ship by default on macOS, Linux, and Windows 10+. No GitHub CLI (`gh`),
+auth token, Python, or `unzip` needed — `setup_ot2.sh` downloads wheels as a `.tar.gz`
+from a public release asset, which doesn't require authentication.
 
 ## The 3-step flow
 
