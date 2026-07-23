@@ -137,7 +137,7 @@ RUN python -m build --wheel && \
     cp dist/*.whl /output/ && \
     printf 'grpcio==1.46.3\n' > /tmp/overrides.txt && \
     uv pip compile --python-version 3.10 --override /tmp/overrides.txt pyproject.toml > /tmp/resolved.txt && \
-    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic\|^opentrons\|^uvicorn\|^wsproto' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic\|^opentrons\|^uvicorn\|^wsproto\|^python-dotenv' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 310 --implementation cp --abi cp310 \

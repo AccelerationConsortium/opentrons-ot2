@@ -81,7 +81,7 @@ RUN python -m build --wheel && \
     mkdir -p /output && \
     cp dist/*.whl /output/ && \
     uv pip compile --python-version 3.12 pyproject.toml > /tmp/resolved.txt && \
-    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic\|^opentrons\|^uvicorn\|^wsproto' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
+    grep -v '^numpy\|^grpcio\|^gpiod\|^pydantic\|^opentrons\|^uvicorn\|^wsproto\|^python-dotenv' /tmp/resolved.txt > /tmp/resolved_filtered.txt && \
     pip download --no-deps -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
         --python-version 312 --implementation cp --abi cp312 \
