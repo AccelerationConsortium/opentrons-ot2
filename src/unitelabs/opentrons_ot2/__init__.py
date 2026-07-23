@@ -190,6 +190,7 @@ async def _create_app_with_robot_server(
     dev environment without the robot-server installed.
     """
     import os
+    import sys
 
     import uvicorn
     from opentrons.hardware_control import API
@@ -201,6 +202,16 @@ async def _create_app_with_robot_server(
     if not config.use_simulator:
         os.environ.setdefault("RUNNING_ON_PI", "true")
         os.environ.setdefault("OT_SMOOTHIE_ID", "AMA")
+
+    # The connector runs as a frozen (PyInstaller) executable on the robot, which has its
+    # own bundled Python and doesn't automatically see the OT-2's system site-packages the
+    # way a normal Python install would. robot_server (not on PyPI -- see docstring above)
+    # lives there, bundled with its own working set of deps (fastapi, uvicorn, aiohttp,
+    # etc.) as the OT-2 firmware's own stock installation, so adding just this one
+    # directory resolves robot_server's entire import chain, not only robot_server itself.
+    system_site_packages = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+    if system_site_packages not in sys.path:
+        sys.path.append(system_site_packages)
 
     from robot_server.hardware import _hw_api_accessor, _init_task_accessor  # type: ignore[import]
     from robot_server.app import app as robot_server_app  # type: ignore[import]
