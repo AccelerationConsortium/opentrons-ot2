@@ -108,10 +108,13 @@ COPY --from=gpiod-builder /gpiod-output/gpiod-*.whl /output/
 #
 # opentrons/opentrons_shared_data/opentrons_hardware are reinstalled from git (not
 # just the PyPI opentrons==9.0.0 wheel above) because the PyPI build omits symbols
-# robot_server imports. No --platform/--abi flags: these are pure-Python VCS sources
-# pip must build, and this container already IS the target arch/Python version, so it
-# builds correctly without them.
-RUN pip download --no-deps -d /output/ \
+# robot_server imports. pip wheel (not pip download): pip download saves a VCS source
+# as a raw .zip source tree, not an actual .whl -- confirmed directly -- so the later
+# `pip install /wheels/*.whl` would silently skip it. pip wheel builds and saves a real
+# wheel, same tool already used for gpiod/numpy above. No --platform/--abi flags: these
+# are pure-Python VCS sources pip must build, and this container already IS the target
+# arch/Python version, so it builds correctly without them.
+RUN pip wheel --no-deps --wheel-dir=/output/ \
         "opentrons @ git+https://github.com/Opentrons/opentrons.git@v9.0.0#subdirectory=api" \
         "opentrons_shared_data @ git+https://github.com/Opentrons/opentrons.git@v9.0.0#subdirectory=shared-data" \
         "opentrons_hardware @ git+https://github.com/Opentrons/opentrons.git@v9.0.0#subdirectory=hardware" \
@@ -136,16 +139,18 @@ RUN pip download -d /output/ \
 
 # paho-mqtt==1.6.1 only ever published an sdist, no wheel -- --only-binary=:all: above
 # would reject it. It's pure Python with no deps of its own, so build it directly with
-# no platform restriction (same reasoning as the git packages above).
-RUN pip download --no-deps -d /output/ "paho-mqtt==1.6.1"
+# no platform restriction (same reasoning as the git packages above). pip wheel, not
+# pip download -- see comment above the git packages for why.
+RUN pip wheel --no-deps --wheel-dir=/output/ "paho-mqtt==1.6.1"
 
 # aiohttp and sqlalchemy==1.4.51 have no prebuilt armv7l wheels for cp312 (checked
 # directly against piwheels.org). Both have official, documented pure-Python build
 # modes, sidestepping the need for a cross-compile toolchain entirely:
 #   - aiohttp: AIOHTTP_NO_EXTENSIONS=1
 #   - SQLAlchemy: DISABLE_SQLALCHEMY_CEXT=1 (documented since 0.8.6/0.9.4)
+# pip wheel, not pip download -- see comment above the git packages for why.
 RUN AIOHTTP_NO_EXTENSIONS=1 DISABLE_SQLALCHEMY_CEXT=1 \
-    pip download --no-binary aiohttp --no-binary sqlalchemy -d /output/ \
+    pip wheel --no-binary aiohttp --no-binary sqlalchemy --wheel-dir=/output/ \
         "aiohttp" \
         "sqlalchemy==1.4.51"
 
