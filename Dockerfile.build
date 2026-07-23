@@ -184,8 +184,12 @@ RUN pip download -d /output/ \
         "python-dotenv==1.0.1" \
         "python-multipart==0.0.6" \
         "uvicorn==0.27.0.post1" \
-        "wsproto==1.2.0" \
-        "paho-mqtt==1.6.1"
+        "wsproto==1.2.0"
+
+# paho-mqtt==1.6.1 only ever published an sdist, no wheel -- --only-binary=:all: above
+# would reject it. It's pure Python with no deps of its own, so build it directly with
+# no platform restriction (same reasoning as the git packages above).
+RUN pip download --no-deps -d /output/ "paho-mqtt==1.6.1"
 
 # aiohttp and sqlalchemy==1.4.51 have no prebuilt armv7l wheels for cp310 (checked
 # directly against piwheels.org, the actual ARM-wheel repo the Raspberry-Pi-like OT-2
