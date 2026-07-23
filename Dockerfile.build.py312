@@ -119,10 +119,13 @@ RUN pip download --no-deps -d /output/ \
         "server_utils @ git+https://github.com/Opentrons/opentrons.git@v9.0.0#subdirectory=server-utils"
 
 # robot_server's own non-monorepo runtime deps, pinned to the exact versions
-# .github/workflows/test.yml already proves compatible with it.
+# .github/workflows/test.yml already proves compatible with it. --only-binary=:all:
+# (required alongside --platform/--python-version/--abi unless --no-deps is used) is
+# fine here -- unlike aiohttp/sqlalchemy below, transitive deps of this set (starlette,
+# anyio, click, h11, etc.) are expected to have ordinary prebuilt wheels.
 RUN pip download -d /output/ \
         --platform manylinux_2_17_armv7l --platform linux_armv7l \
-        --python-version 312 --implementation cp --abi cp312 \
+        --python-version 312 --implementation cp --abi cp312 --only-binary=:all: \
         "fastapi==0.100.0" \
         "pydantic==2.11.7" \
         "pydantic-settings==2.4.0" \
