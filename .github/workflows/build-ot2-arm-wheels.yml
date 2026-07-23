@@ -146,3 +146,40 @@ jobs:
           name: ot2-connector-arm-py312
           path: dist_connector_py312/
           retention-days: 28
+
+  # Publishes both wheel sets to a rolling "ot2-latest" release so scripts/setup_ot2.sh
+  # can download them with plain curl -- no gh CLI / auth token needed on the dev
+  # machine, since (unlike workflow artifacts) public-repo release assets are
+  # downloadable unauthenticated.
+  publish-release:
+    needs: [build-ot2-arm-wheels-py310, build-ot2-arm-wheels-py312]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ot2-arm-wheels-py310
+          path: dist_arm
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ot2-arm-wheels-py312
+          path: dist_arm_py312
+
+      - name: Zip wheel sets
+        run: |
+          (cd dist_arm && zip -r ../ot2-arm-wheels-py310.zip .)
+          (cd dist_arm_py312 && zip -r ../ot2-arm-wheels-py312.zip .)
+
+      - name: Publish/update rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ot2-latest
+          name: "OT-2 ARM wheels (latest main)"
+          body: "Automatically updated on every push to main. Built from ${{ github.sha }}."
+          make_latest: true
+          files: |
+            ot2-arm-wheels-py310.zip
+            ot2-arm-wheels-py312.zip
