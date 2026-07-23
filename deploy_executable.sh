@@ -3,20 +3,20 @@
 # Does not require pip, a venv, or any Python on the robot.
 #
 # Usage:
-#   ./deploy_executable.sh [hostname] [connector_dir]
+#   ./deploy_executable.sh <hostname> [connector_dir]
 #
 # Arguments:
-#   hostname       Robot hostname or IP (default: ot2cep20240218r04)
+#   hostname       Robot hostname or IP
 #   connector_dir  Local directory containing the connector binary and config
 #                  (default: dist_connector). Must contain:
 #                    - connector  (the PyInstaller binary)
 #                    - ot2_config.json
 #
-# Download the ot2-connector-arm artifact from GitHub Actions and unzip into
-# dist_connector/ before running this script.
+# Normally called by scripts/setup_ot2.sh, which downloads this directory from
+# the latest "ot2-latest" GitHub Release first.
 set -e
 
-HOST="${1:-ot2cep20240218r04}"
+HOST="${1:?Usage: $0 <host> [connector_dir]}"
 CONNECTOR_DIR="${2:-dist_connector}"
 INSTALL_PATH="/var/sila2_ot2"
 

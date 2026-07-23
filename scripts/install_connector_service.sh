@@ -29,10 +29,9 @@ Wants=opentrons-init-connections.service
 
 [Service]
 Type=simple
-ExecStart=/var/sila2_ot2/bin/connector start --app unitelabs.opentrons_ot2:create_app --config-path /var/sila2_ot2/config.json
+ExecStart=/var/sila2_ot2/connector start --app unitelabs.opentrons_ot2:create_app --config-path /var/sila2_ot2/config.json
 Environment=RUNNING_ON_PI=true
 Environment=OT_SMOOTHIE_ID=AMA
-Environment=PYTHONPYCACHEPREFIX=/var/cache/sila2-pycache
 Restart=on-failure
 RestartSec=5
 
