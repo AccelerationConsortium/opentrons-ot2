@@ -99,12 +99,17 @@ COPY --from=gpiod-builder /gpiod-output/gpiod-*.whl /output/
 FROM gpiod-builder AS pyinstaller-builder
 
 # All wheels (pure-Python + C extensions) come from the builder stage's /output.
-# pydantic was excluded from /output to avoid shadowing system pydantic in the venv deploy,
-# but the PyInstaller bundle is fully self-contained — no system conflict, so add it back.
+# pydantic was excluded from /output -- add it back here pinned to the exact version
+# .github/workflows/test.yml's own robot_server integration tests prove compatible.
+# robot_server (imported from OT-2 system site-packages at runtime -- see
+# _create_app_with_robot_server) does `from pydantic.fields import Undefined` via its
+# system fastapi; since our own code imports pydantic first, that's what robot_server's
+# import resolves to too (Python caches modules by name before consulting sys.path at
+# all), so an unpinned/newer pydantic here breaks robot_server with an ImportError.
 COPY --from=builder /output/ /wheels/
 
 RUN pip install --no-deps /wheels/*.whl && \
-    pip install pydantic pydantic-settings
+    pip install "pydantic==2.11.7" "pydantic-settings==2.4.0"
 
 # Build the PyInstaller bootloader from source for armv7l on Bookworm.
 # PyInstaller ships pre-built bootloaders for x86/x86_64/aarch64 only — not armv7l.

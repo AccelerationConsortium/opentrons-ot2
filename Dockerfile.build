@@ -154,10 +154,15 @@ COPY --from=builder /output/ /wheels/
 
 # Install all wheels into the Stretch Python 3.10 environment.
 # --no-deps: every required package is already in /wheels/; no PyPI lookups needed.
-# pydantic was excluded from /output to avoid shadowing system pydantic in the venv deploy,
-# but the PyInstaller bundle is self-contained — add it back from PyPI.
+# pydantic was excluded from /output -- add it back here pinned to the exact version
+# .github/workflows/test.yml's own robot_server integration tests prove compatible.
+# robot_server (imported from OT-2 system site-packages at runtime -- see
+# _create_app_with_robot_server) does `from pydantic.fields import Undefined` via its
+# system fastapi; since our own code imports pydantic first, that's what robot_server's
+# import resolves to too (Python caches modules by name before consulting sys.path at
+# all), so an unpinned/newer pydantic here breaks robot_server with an ImportError.
 RUN /usr/local/bin/pip3 install --no-deps /wheels/*.whl && \
-    /usr/local/bin/pip3 install pydantic pydantic-settings
+    /usr/local/bin/pip3 install "pydantic==2.11.7" "pydantic-settings==2.4.0"
 
 # Build the PyInstaller bootloader from source for armv7l on Stretch (glibc 2.24).
 # PyInstaller ships pre-built bootloaders for x86/x86_64/aarch64 only — not armv7l.
