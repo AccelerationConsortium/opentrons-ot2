@@ -18,7 +18,7 @@ fi
 
 echo "Uploading and extracting Tailscale binary on $HOST ..."
 ssh "root@$HOST" 'mount -o remount,rw /'
-scp "$SCRIPT_DIR/$TARBALL" "root@$HOST:/data/"
+scp -O "$SCRIPT_DIR/$TARBALL" "root@$HOST:/data/"
 ssh "root@$HOST" "cd /data && tar xzf $TARBALL"
 
 echo "Writing auth key ..."
