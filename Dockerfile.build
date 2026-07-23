@@ -107,9 +107,10 @@ FROM arm32v7/python:3.10-slim-bookworm AS builder
 
 WORKDIR /build
 # git: needed below to pip-download robot_server and its monorepo siblings from source
-# (not on PyPI); slim-bookworm doesn't include it by default.
+# (not on PyPI); slim-bookworm doesn't include it by default. build-essential (g++):
+# needed to compile greenlet, a transitive dep SQLAlchemy pulls in further below.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git && \
+    apt-get install -y --no-install-recommends git build-essential && \
     rm -rf /var/lib/apt/lists/*
 RUN pip install --upgrade pip wheel build uv
 
