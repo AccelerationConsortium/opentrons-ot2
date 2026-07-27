@@ -1,6 +1,6 @@
 import sys
 import types
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 # gpiod is a Linux-only kernel library; stub it so tests run on any platform.
 if "gpiod" not in sys.modules:
@@ -20,9 +20,15 @@ except ImportError:
     _rs_hw._init_task_accessor = MagicMock(name="_init_task_accessor")
     _rs_app = types.ModuleType("robot_server.app")
     _rs_app.app = MagicMock(name="robot_server_app")
+    _rs_runs = types.ModuleType("robot_server.runs")
+    _rs_runs_deps = types.ModuleType("robot_server.runs.dependencies")
+    _rs_runs_deps.start_light_control_task = AsyncMock(name="start_light_control_task")
+    _rs_runs_deps.mark_light_control_startup_finished = AsyncMock(name="mark_light_control_startup_finished")
     sys.modules["robot_server"] = _rs
     sys.modules["robot_server.hardware"] = _rs_hw
     sys.modules["robot_server.app"] = _rs_app
+    sys.modules["robot_server.runs"] = _rs_runs
+    sys.modules["robot_server.runs.dependencies"] = _rs_runs_deps
 
 try:
     import unitelabs.bus.testing.fixtures  # noqa: F401

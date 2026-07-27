@@ -6,7 +6,8 @@ shutdown regressions for the in-process robot-server mode.
 
 Boundaries:
   robot_server  — stubbed in conftest.py (Opentrons-internal, not on PyPI)
-  uvicorn       — real package (test dep); Server.serve mocked to avoid binding ports
+  uvicorn       — real package (test dep); Server.startup/main_loop/shutdown mocked to
+                  avoid binding ports
   hardware      — mocked at API.build_hardware_controller
 """
 
@@ -38,6 +39,8 @@ def _reset_robot_server_stubs():
     sys.modules["robot_server.hardware"]._hw_api_accessor.reset_mock()
     sys.modules["robot_server.hardware"]._init_task_accessor.reset_mock()
     sys.modules["robot_server.app"].app.reset_mock()
+    sys.modules["robot_server.runs.dependencies"].start_light_control_task.reset_mock()
+    sys.modules["robot_server.runs.dependencies"].mark_light_control_startup_finished.reset_mock()
 
 
 @contextlib.asynccontextmanager
@@ -51,7 +54,9 @@ async def _run(config=_CONFIG, module_ports=None):
     """
     mock_api = AsyncMock()
     mock_uv_server = MagicMock()
-    mock_uv_server.serve = AsyncMock()
+    mock_uv_server.startup = AsyncMock()
+    mock_uv_server.main_loop = AsyncMock()
+    mock_uv_server.shutdown = AsyncMock()
     mock_connector = MagicMock()
     registered = []
     mock_connector.register.side_effect = registered.append
@@ -115,7 +120,10 @@ async def test_hardware_built_on_configured_port():
         patch("unitelabs.opentrons_ot2.OT2MotionController.from_api", return_value=MagicMock()),
         patch("unitelabs.opentrons_ot2.scan_module_ports", return_value={}),
         patch("unitelabs.opentrons_ot2.Connector", return_value=MagicMock()),
-        patch("uvicorn.Server", return_value=MagicMock(serve=AsyncMock())),
+        patch(
+            "uvicorn.Server",
+            return_value=MagicMock(startup=AsyncMock(), main_loop=AsyncMock(), shutdown=AsyncMock()),
+        ),
         patch("uvicorn.Config"),
     ):
         gen = create_app(_CONFIG)
@@ -165,7 +173,10 @@ async def test_uvicorn_configured_on_unix_socket():
         patch("unitelabs.opentrons_ot2.OT2MotionController.from_api", return_value=MagicMock()),
         patch("unitelabs.opentrons_ot2.scan_module_ports", return_value={}),
         patch("unitelabs.opentrons_ot2.Connector", return_value=MagicMock()),
-        patch("uvicorn.Server", return_value=MagicMock(serve=AsyncMock())),
+        patch(
+            "uvicorn.Server",
+            return_value=MagicMock(startup=AsyncMock(), main_loop=AsyncMock(), shutdown=AsyncMock()),
+        ),
     ):
         gen = create_app(_CONFIG)
         await gen.__anext__()
@@ -176,10 +187,42 @@ async def test_uvicorn_configured_on_unix_socket():
 
 
 @pytest.mark.asyncio
-async def test_uvicorn_serve_task_started():
-    """uvicorn.Server.serve is called to create the background task."""
+async def test_uvicorn_startup_and_main_loop_started():
+    """uvicorn.Server.startup is awaited, then main_loop is used for the background task.
+
+    serve() is deliberately not called: it is split into startup() -> main_loop() so the
+    light-control callbacks below can run in between, once startup() (which runs the ASGI
+    lifespan, including the task runner they depend on) has completed.
+    """
     async with _run() as r:
-        r.uv_server.serve.assert_called_once()
+        r.uv_server.startup.assert_awaited_once()
+        r.uv_server.main_loop.assert_called_once()
+
+
+# ── light control ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_light_control_started_after_hardware():
+    """start_light_control_task is awaited with our HardwareProxy, not a fresh hardware object.
+
+    Regression test: start_initializing_hardware()'s callback list (which normally does
+    this) never runs when its own hardware-build step is skipped in favor of our
+    pre-populated proxy, so this must be called explicitly instead.
+    """
+    deps = sys.modules["robot_server.runs.dependencies"]
+    async with _run():
+        deps.start_light_control_task.assert_awaited_once()
+        _, proxy_arg = deps.start_light_control_task.call_args[0]
+        assert isinstance(proxy_arg, HardwareProxy)
+
+
+@pytest.mark.asyncio
+async def test_light_control_startup_marked_finished():
+    """mark_light_control_startup_finished is awaited once, completing light-control setup."""
+    deps = sys.modules["robot_server.runs.dependencies"]
+    async with _run():
+        deps.mark_light_control_startup_finished.assert_awaited_once()
 
 
 # ── feature registration ──────────────────────────────────────────────────────
