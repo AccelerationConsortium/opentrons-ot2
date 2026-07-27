@@ -179,9 +179,18 @@ async def _create_app_with_robot_server(
        proxy on ``robot_server_app.state``.  This causes ``start_initializing_hardware()``
        (called in the lifespan) to skip its own hardware init (it only acts when the task
        is ``None``), so the serial port is never opened a second time.
-    4. uvicorn serves ``robot_server_app`` on ``config.robot_server_uds`` (a Unix domain
+    4. That same skip also silently drops ``start_initializing_hardware()``'s startup
+       callbacks -- notably ``start_light_control_task``/``mark_light_control_startup_finished``
+       -- since they only ever run from inside the hardware-build routine we bypassed.
+       We call ``uv_server.startup()`` directly (instead of ``uv_server.serve()``), which
+       runs the ASGI lifespan startup (task runner, persistence, etc. -- everything
+       ``_lifespan()`` does except the now-skipped hardware build) and binds the socket,
+       then invoke those two callbacks ourselves against our own ``proxy`` before starting
+       ``uv_server.main_loop()``. Without this, any endpoint needing the light controller
+       (e.g. ``POST /runs``) permanently 503s with ``HardwareNotYetInitialized``.
+    5. uvicorn serves ``robot_server_app`` on ``config.robot_server_uds`` (a Unix domain
        socket).  nginx on the OT-2 proxies TCP 31950 → that socket.
-    5. The SiLA2 ``Connector`` is built and yielded; modules are registered as found.
+    6. The SiLA2 ``Connector`` is built and yielded; modules are registered as found.
 
     Deferred imports
     ----------------
@@ -207,6 +216,10 @@ async def _create_app_with_robot_server(
 
     from robot_server.hardware import _hw_api_accessor, _init_task_accessor  # type: ignore[import]
     from robot_server.app import app as robot_server_app  # type: ignore[import]
+    from robot_server.runs.dependencies import (  # type: ignore[import]
+        mark_light_control_startup_finished,
+        start_light_control_task,
+    )
 
     if config.use_simulator:
         log.info("Building shared HardwareControlAPI (simulator)")
@@ -253,7 +266,23 @@ async def _create_app_with_robot_server(
             log_level="info",
         )
     uv_server = uvicorn.Server(uv_config)
-    robot_server_task = asyncio.create_task(uv_server.serve())
+
+    # uvicorn.Server.serve() is just startup() -> main_loop() -> shutdown(), but it also
+    # does two things first that startup() itself assumes are already done: loading the
+    # config and constructing self.lifespan (config.lifespan_class(config)) -- normally
+    # done inside serve()'s own body, which we bypass here to run the light-control
+    # callbacks in between startup() and main_loop().
+    if not uv_config.loaded:
+        uv_config.load()
+    uv_server.lifespan = uv_config.lifespan_class(uv_config)
+
+    # startup() runs the ASGI lifespan (task runner, persistence, etc. -- see docstring
+    # point 4 above) and binds the socket, which is the first moment those callbacks' own
+    # dependencies (namely the task runner) are guaranteed ready.
+    await uv_server.startup()
+    await start_light_control_task(robot_server_app.state, proxy)
+    await mark_light_control_startup_finished(robot_server_app.state, proxy)
+    robot_server_task = asyncio.create_task(uv_server.main_loop())
     if config.robot_server_tcp_port is None:
         log.info("robot-server starting on %s", config.robot_server_uds)
 
@@ -295,9 +324,12 @@ async def _create_app_with_robot_server(
 
     yield connector
 
-    # Shutdown robot_server gracefully
+    # Shutdown robot_server gracefully. main_loop() (unlike serve()) only exits the
+    # polling loop -- it does not close listeners or run the lifespan shutdown, so we
+    # call shutdown() ourselves afterward, mirroring what serve() would have done.
     uv_server.should_exit = True
     await asyncio.gather(robot_server_task, return_exceptions=True)
+    await uv_server.shutdown()
 
     # The shared HardwareControlAPI owns the modules it attached, so its clean_up()
     # closes their serial ports — the module-backed controllers do not own them.

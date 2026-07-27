@@ -132,3 +132,20 @@ def test_home_returns_200(http_client):
     """POST /robot/home responds with 200 OK — hardware is reachable via HardwareProxy."""
     response = http_client.post("/robot/home", json={"target": "pipette", "mount": "left"})
     assert response.status_code == 200
+
+
+# ── /runs ─────────────────────────────────────────────────────────────────────
+#
+# Regression test for a bug where run creation permanently 503'd with
+# HardwareNotYetInitialized even though every other endpoint above worked fine.
+# start_initializing_hardware()'s callback list (which normally populates the
+# light controller) never runs when its own hardware-build step is skipped in
+# favor of our pre-populated HardwareProxy -- get_light_controller then always
+# finds its accessor unset. See _create_app_with_robot_server's docstring.
+
+
+@pytest.mark.robot_http_only
+def test_create_run_returns_201(http_client):
+    """POST /runs creates a new run — this is the endpoint that needs the light controller."""
+    response = http_client.post("/runs", json={"data": {}})
+    assert response.status_code == 201, response.text
