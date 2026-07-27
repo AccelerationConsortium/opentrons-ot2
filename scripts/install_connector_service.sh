@@ -34,6 +34,12 @@ Type=simple
 # this bundle (robot_server plus its full dep set) and shared with anything else
 # that uses /tmp. /var/sila2_ot2/tmp is on real storage with room to spare.
 ExecStartPre=/bin/mkdir -p /var/sila2_ot2/tmp
+# Kill any connector process not tracked by this unit (e.g. left over from a
+# manual start, or a prior instance systemd's own restart didn't fully reap)
+# before starting a new one — two live instances fight over the same GPIO
+# lines/serial port, and the loser's hardware init hangs forever. "-" ignores
+# pkill's exit code (1 = nothing matched), which isn't a failure here.
+ExecStartPre=-/usr/bin/pkill -f 'connector start'
 ExecStart=/var/sila2_ot2/connector start --app unitelabs.opentrons_ot2:create_app --config-path /var/sila2_ot2/config.json
 Environment=RUNNING_ON_PI=true
 Environment=OT_SMOOTHIE_ID=AMA
