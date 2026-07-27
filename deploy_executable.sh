@@ -52,7 +52,11 @@ ssh "root@$HOST" "chmod +x $INSTALL_PATH/connector"
 
 echo ""
 echo "Verifying ..."
-ssh "root@$HOST" "$INSTALL_PATH/connector --help"
+# TMPDIR must match what the systemd unit sets (install_connector_service.sh) --
+# the default /tmp is a ~450M tmpfs, too small for this bundle (robot_server plus
+# its full dep set), and PyInstaller's onefile bootloader extracts everything
+# there on every invocation, even just for --help.
+ssh "root@$HOST" "mkdir -p $INSTALL_PATH/tmp && TMPDIR=$INSTALL_PATH/tmp $INSTALL_PATH/connector --help"
 
 echo ""
 echo "=== Deploy complete ==="
