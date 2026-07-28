@@ -77,6 +77,18 @@ _AxesStr = typing.Annotated[str, constraints.Pattern(rf"^[{_AXIS_CHARS}{_AXIS_CH
 _PLUNGER_AXES = frozenset({Axis.B, Axis.C})
 _PLUNGER_FALLBACK_FLOOR_MM = -37.0
 
+# OT-2 mount-vertical axes (Z = left mount, A = right mount). Like the plunger
+# axes, Opentrons provides no fixed floor for these -- HOMED_POSITION only
+# defines the top/retracted position, not a minimum -- and Protocol Engine
+# itself does not enforce one at the software level: verified 2026-07-28 by
+# replaying an identical moveToWell request through the real robot-server HTTP
+# API, which executed a machine position below 0 (-21.44 mm) without error.
+# The physical limit switches are the actual safety boundary here, same as
+# Protocol Engine relies on -- don't invent a synthetic software floor for
+# these two axes. X/Y (deck-plane) keep the 0.0 floor below; that hasn't been
+# tested and there's no evidence it's wrong.
+_GANTRY_Z_AXES = frozenset({Axis.Z, Axis.A})
+
 
 class BoardRevision(enum.Enum):
     """OT-2 hardware board revision read from GPIO pins at startup."""
@@ -100,7 +112,7 @@ class AxisBound:
     """Software travel limit for one axis."""
 
     axis: Axis
-    min_mm: typing.Annotated[float, constraints.MinimalInclusive(0.0)]
+    min_mm: float
     max_mm: typing.Annotated[float, constraints.MinimalInclusive(0.0)]
 
 
@@ -199,9 +211,7 @@ class MotionControlFeature(sila.Feature):
         return _dict_to_position(pos)
 
     @sila.UnobservableCommand(errors=[OutOfBoundsError])
-    async def move_axis(
-        self, axis: Axis, position: typing.Annotated[float, constraints.MinimalInclusive(0.0)], speed: float = 0.0
-    ) -> AxisPosition:
+    async def move_axis(self, axis: Axis, position: float, speed: float = 0.0) -> AxisPosition:
         """
         Move a single axis to an absolute position.
 
@@ -361,12 +371,16 @@ class MotionControlFeature(sila.Feature):
         """
         Software lower travel limit (mm) for an axis.
 
-        Gantry axes floor at 0. Plunger axes travel negative; opentrons has no
-        fixed plunger floor -- the range is defined by the attached pipette -- so
-        we source the floor from that pipette's drop-tip position via the
-        HardwareAPI, falling back to a conservative default when no pipette /
-        HardwareAPI is available (bare simulator).
+        X/Y (deck-plane) floor at 0 -- untested by the investigation below, no
+        evidence it's wrong. Z/A (mount-vertical) and the plunger axes (B, C)
+        all travel negative in normal operation and have no Opentrons-provided
+        fixed floor, so no synthetic one is enforced here; the physical limit
+        switches are the real safety boundary, same as Protocol Engine itself
+        relies on. Plunger axes still report a documented floor sourced from
+        the attached pipette (or a fallback) for informational purposes.
         """
+        if axis in _GANTRY_Z_AXES:
+            return float("-inf")
         if axis not in _PLUNGER_AXES:
             return 0.0
         hw_api = self._controller._hw_api

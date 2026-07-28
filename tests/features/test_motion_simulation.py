@@ -73,10 +73,26 @@ async def test_move_to_rejects_plunger_below_floor(homed_feature: MotionControlF
 
 
 async def test_move_to_rejects_negative_gantry(homed_feature: MotionControlFeature):
-    """Gantry axes still reject negative targets."""
+    """X/Y (deck-plane) still reject negative targets."""
     pos = await homed_feature.get_position()
     with pytest.raises(OutOfBoundsError):
         await homed_feature.move_to(_with(pos, x=-1.0))
+
+
+async def test_move_to_allows_negative_mount_vertical_axes(homed_feature: MotionControlFeature):
+    """Z/A (mount-vertical) accept negative targets -- no synthetic software floor.
+
+    Opentrons provides no fixed minimum for these two axes (only a homed/top
+    position), and Protocol Engine itself does not reject negative machine
+    positions for them: verified by replaying an identical moveToWell request
+    through the real robot-server HTTP API, which executed a machine position
+    of -21.44 mm without error. The physical limit switches are the real
+    safety boundary, same as Protocol Engine relies on.
+    """
+    pos = await homed_feature.get_position()
+    result = await homed_feature.move_to(_with(pos, z=-10.0, a=-10.0))
+    assert result.z == pytest.approx(-10.0)
+    assert result.a == pytest.approx(-10.0)
 
 
 async def test_plunger_floor_is_dynamic_from_attached_pipette():
@@ -225,10 +241,15 @@ async def test_axis_bounds_returns_all_axes(feature):
 
 @pytest.mark.asyncio
 async def test_axis_bounds_min_per_axis(feature):
-    """Gantry axes floor at 0; plunger axes (B, C) floor negative (drop-tip travel)."""
+    """X/Y (deck-plane) floor at 0. Z/A (mount-vertical) have no software floor --
+    Opentrons provides no fixed minimum for these and Protocol Engine itself
+    doesn't enforce one; the physical limit switches are the real boundary.
+    Plunger axes (B, C) floor negative (drop-tip travel)."""
     bounds = {b.axis.value: b.min_mm for b in feature.axis_bounds()}
-    for ax in ("X", "Y", "Z", "A"):
+    for ax in ("X", "Y"):
         assert bounds[ax] == 0.0
+    for ax in ("Z", "A"):
+        assert bounds[ax] == float("-inf")
     assert bounds["B"] < 0.0
     assert bounds["C"] < 0.0
 
