@@ -26,6 +26,7 @@ from unitelabs.opentrons_ot2.features.motion_control import (
     Axis,
     AxisPosition,
     MotionControlFeature,
+    Mount,
     OutOfBoundsError,
 )
 from unitelabs.opentrons_ot2.io.motion import OT2MotionController
@@ -93,6 +94,34 @@ async def test_move_to_allows_negative_mount_vertical_axes(homed_feature: Motion
     result = await homed_feature.move_to(_with(pos, z=-10.0, a=-10.0))
     assert result.z == pytest.approx(-10.0)
     assert result.a == pytest.approx(-10.0)
+
+
+# ── Plunger direction: aspirate retracts UP from bottom, dispense presses DOWN ─
+
+_PLUNGER_BOTTOM = -18.5  # P1000 GEN2 bottom; supplied by the client in production
+
+
+async def test_prepare_aspirate_dispense_round_trip(homed_feature: MotionControlFeature):
+    """Opentrons plunger semantics end-to-end: prepare places the plunger at
+    bottom, aspirate retracts it UP by volume/ul_per_mm, dispense presses it
+    back DOWN to bottom."""
+    pos = await homed_feature.prepare_for_aspirate(Mount.LEFT, _PLUNGER_BOTTOM)
+    assert pos.b == pytest.approx(_PLUNGER_BOTTOM)
+
+    pos = await homed_feature.aspirate(Mount.LEFT, 5.0, 1.0, 10.0)
+    assert pos.b == pytest.approx(_PLUNGER_BOTTOM + 5.0)
+
+    pos = await homed_feature.dispense(Mount.LEFT, 5.0, 1.0, 10.0)
+    assert pos.b == pytest.approx(_PLUNGER_BOTTOM)
+
+
+async def test_aspirate_without_prepare_is_rejected(homed_feature: MotionControlFeature):
+    """After home the plunger sits retracted at top (B=19): aspirating (an UP
+    move) from there must be rejected as out of bounds, not silently run the
+    transfer backwards. This is the guard for callers that skip
+    PrepareForAspirate."""
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.aspirate(Mount.LEFT, 5.0, 1.0, 10.0)
 
 
 async def test_plunger_floor_is_dynamic_from_attached_pipette():
@@ -303,41 +332,36 @@ async def test_move_relative_axis_within_bounds_ok(homed_feature):
 
 
 @pytest.mark.asyncio
-async def test_aspirate_below_plunger_floor_raises(homed_feature):
-    from unitelabs.opentrons_ot2.features.motion_control import Mount, OutOfBoundsError
-
-    # Plunger B homed at 19; aspirating 60 mm worth of volume drives it to -41,
-    # below the -37 mm plunger floor.
+async def test_aspirate_above_plunger_max_raises(homed_feature):
+    # Plunger B homed at its max (19); aspirating (an UP move) from there
+    # exceeds the limit — the guard against skipping PrepareForAspirate.
     with pytest.raises(OutOfBoundsError):
         await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=300.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
 
 
 @pytest.mark.asyncio
 async def test_aspirate_within_bounds_ok(homed_feature):
-    from unitelabs.opentrons_ot2.features.motion_control import Mount
-
-    # 50 uL / 5 (uL/mm) = 10 mm down from 19 → target 9, within [0, 19].
+    # Prepared at bottom (-18.5); 50 uL / 5 (uL/mm) = 10 mm UP → -8.5, within bounds.
+    await homed_feature.prepare_for_aspirate(mount=Mount.LEFT, bottom_position_mm=_PLUNGER_BOTTOM)
     result = await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=50.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
-    assert result.b == pytest.approx(9.0)
+    assert result.b == pytest.approx(_PLUNGER_BOTTOM + 10.0)
 
 
 @pytest.mark.asyncio
-async def test_dispense_above_max_raises(homed_feature):
-    from unitelabs.opentrons_ot2.features.motion_control import Mount, OutOfBoundsError
-
-    # Plunger B homed at its max (19); any upward dispense exceeds the limit.
+async def test_dispense_below_plunger_floor_raises(homed_feature):
+    # Plunger B homed at 19; dispensing 60 mm worth of volume (a DOWN move)
+    # drives it to -41, below the -37 mm plunger floor.
     with pytest.raises(OutOfBoundsError):
-        await homed_feature.dispense(mount=Mount.LEFT, volume_ul=50.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
+        await homed_feature.dispense(mount=Mount.LEFT, volume_ul=300.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
 
 
 @pytest.mark.asyncio
 async def test_dispense_within_bounds_ok(homed_feature):
-    from unitelabs.opentrons_ot2.features.motion_control import Mount
-
-    # Lower the plunger first, then dispense partway back up: 9 + 4 = 13, within [0, 19].
+    # Prepare + aspirate 10 mm up (-8.5), then dispense 4 mm back down → -12.5.
+    await homed_feature.prepare_for_aspirate(mount=Mount.LEFT, bottom_position_mm=_PLUNGER_BOTTOM)
     await homed_feature.aspirate(mount=Mount.LEFT, volume_ul=50.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
     result = await homed_feature.dispense(mount=Mount.LEFT, volume_ul=20.0, ul_per_mm=5.0, flow_rate_ul_s=10.0)
-    assert result.b == pytest.approx(13.0)
+    assert result.b == pytest.approx(_PLUNGER_BOTTOM + 6.0)
 
 
 # ── Board revision / serial / disengage ───────────────────────────────────────
