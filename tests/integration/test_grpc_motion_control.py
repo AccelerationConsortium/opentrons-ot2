@@ -97,6 +97,16 @@ class _MotionClient:
         """Clear alarm state; returns HomedFlags dataclass."""
         return self._single(await self._call("ResetFromError"), HomedFlags)
 
+    async def prepare_for_aspirate(self, mount: Mount, bottom_position_mm: float) -> AxisPosition:
+        """Move the plunger to its bottom position; returns AxisPosition."""
+        return self._single(
+            await self._call(
+                "PrepareForAspirate",
+                {"mount": mount, "bottom_position_mm": bottom_position_mm},
+            ),
+            AxisPosition,
+        )
+
     async def aspirate(self, mount: Mount, volume_ul: float, ul_per_mm: float, flow_rate_ul_s: float) -> AxisPosition:
         """Aspirate volume_ul from mount; returns AxisPosition."""
         return self._single(
@@ -267,38 +277,51 @@ async def test_reset_from_error_clears_homed_flags(client: _MotionClient) -> Non
 # ul_per_mm of 1.0 makes the math trivial: volume_ul == distance_mm.
 _UL_PER_MM = 1.0
 _FLOW_RATE = 10.0  # µL/s
+# A realistic plunger `bottom` (P1000 GEN2 = -18.5 mm); comes from the client's
+# pipette config in production, same ownership as ul_per_mm.
+_PLUNGER_BOTTOM = -18.5
 
 
 @pytest.mark.asyncio
-async def test_aspirate_decreases_plunger_position(client: _MotionClient) -> None:
-    """Aspirate moves the left plunger (B) down by volume_ul / ul_per_mm."""
+async def test_prepare_for_aspirate_moves_plunger_to_bottom(client: _MotionClient) -> None:
+    """PrepareForAspirate places the left plunger (B) at the given bottom position."""
     await client.home()
-    pos_before = await client.get_position()
+    pos = await client.prepare_for_aspirate(Mount.LEFT, _PLUNGER_BOTTOM)
+    assert pos.b == pytest.approx(_PLUNGER_BOTTOM)
+
+
+@pytest.mark.asyncio
+async def test_aspirate_raises_plunger_from_bottom(client: _MotionClient) -> None:
+    """Aspirate retracts the left plunger (B) UP from bottom by volume_ul / ul_per_mm
+    (Opentrons semantics: plunger up = liquid drawn in)."""
+    await client.home()
+    await client.prepare_for_aspirate(Mount.LEFT, _PLUNGER_BOTTOM)
     volume = 5.0
     pos_after = await client.aspirate(Mount.LEFT, volume, _UL_PER_MM, _FLOW_RATE)
-    assert pos_after.b == pytest.approx(pos_before.b - volume / _UL_PER_MM)
+    assert pos_after.b == pytest.approx(_PLUNGER_BOTTOM + volume / _UL_PER_MM)
 
 
 @pytest.mark.asyncio
 async def test_dispense_restores_plunger_position(client: _MotionClient) -> None:
-    """Dispense after aspirate returns the left plunger (B) to its original position."""
+    """Dispense after aspirate presses the left plunger (B) back down to bottom."""
     await client.home()
-    pos_before = await client.get_position()
+    await client.prepare_for_aspirate(Mount.LEFT, _PLUNGER_BOTTOM)
     volume = 5.0
     await client.aspirate(Mount.LEFT, volume, _UL_PER_MM, _FLOW_RATE)
     pos_after = await client.dispense(Mount.LEFT, volume, _UL_PER_MM, _FLOW_RATE)
-    assert pos_after.b == pytest.approx(pos_before.b)
+    assert pos_after.b == pytest.approx(_PLUNGER_BOTTOM)
 
 
 @pytest.mark.asyncio
 async def test_aspirate_right_mount_moves_c_axis(client: _MotionClient) -> None:
     """Aspirate on the right mount moves axis C, not B."""
     await client.home()
-    pos_before = await client.get_position()
+    pos_homed = await client.get_position()
+    await client.prepare_for_aspirate(Mount.RIGHT, _PLUNGER_BOTTOM)
     volume = 3.0
     pos_after = await client.aspirate(Mount.RIGHT, volume, _UL_PER_MM, _FLOW_RATE)
-    assert pos_after.c == pytest.approx(pos_before.c - volume / _UL_PER_MM)
-    assert pos_after.b == pytest.approx(pos_before.b)
+    assert pos_after.c == pytest.approx(_PLUNGER_BOTTOM + volume / _UL_PER_MM)
+    assert pos_after.b == pytest.approx(pos_homed.b)
 
 
 @pytest.mark.asyncio
@@ -306,6 +329,7 @@ async def test_aspirate_does_not_move_gantry(client: _MotionClient) -> None:
     """Aspirate leaves X, Y, Z, A axes unchanged."""
     await client.home()
     pos_before = await client.get_position()
+    await client.prepare_for_aspirate(Mount.LEFT, _PLUNGER_BOTTOM)
     pos_after = await client.aspirate(Mount.LEFT, 5.0, _UL_PER_MM, _FLOW_RATE)
     assert pos_after.x == pytest.approx(pos_before.x)
     assert pos_after.y == pytest.approx(pos_before.y)

@@ -495,12 +495,19 @@ class OT2MotionController:
         ul_per_mm: float,
         flow_rate_ul_s: float,
     ) -> None:
-        """Move plunger axis down by volume_ul to draw liquid."""
+        """
+        Move plunger axis UP by volume_ul to draw liquid.
+
+        Opentrons plunger semantics: aspirating retracts the plunger from
+        ``bottom`` toward ``top`` (increasing axis coordinate), which pulls
+        liquid in. The caller must first place the plunger at ``bottom`` (see
+        the feature's PrepareForAspirate) or the move runs off the axis top.
+        """
         distance_mm = volume_ul / ul_per_mm
         speed_mm_s = flow_rate_ul_s / ul_per_mm
         async with self._lock:
             current = self.position
-            target = {axis: current.get(axis, 0) - distance_mm}
+            target = {axis: current.get(axis, 0) + distance_mm}
             await self._driver.move(target=target, speed=speed_mm_s)
 
     async def dispense(
@@ -510,12 +517,18 @@ class OT2MotionController:
         ul_per_mm: float,
         flow_rate_ul_s: float,
     ) -> None:
-        """Move plunger axis up by volume_ul to expel liquid."""
+        """
+        Move plunger axis DOWN by volume_ul to expel liquid.
+
+        Opentrons plunger semantics: dispensing presses the plunger from its
+        aspirated position back toward ``bottom`` (decreasing axis
+        coordinate), which pushes liquid out.
+        """
         distance_mm = volume_ul / ul_per_mm
         speed_mm_s = flow_rate_ul_s / ul_per_mm
         async with self._lock:
             current = self.position
-            target = {axis: current.get(axis, 0) + distance_mm}
+            target = {axis: current.get(axis, 0) - distance_mm}
             await self._driver.move(target=target, speed=speed_mm_s)
 
     # ============ Motor Current ============

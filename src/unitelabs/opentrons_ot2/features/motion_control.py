@@ -260,6 +260,36 @@ class MotionControlFeature(sila.Feature):
         return _dict_to_position(position)
 
     @sila.UnobservableCommand(errors=[OutOfBoundsError])
+    async def prepare_for_aspirate(
+        self,
+        mount: Mount,
+        bottom_position_mm: float,
+    ) -> AxisPosition:
+        """
+        Move the plunger to its bottom position so Aspirate starts from a known state.
+
+        Mirrors Opentrons' prepare-for-aspirate: aspirating draws liquid by
+        retracting the plunger UP from ``bottom`` toward ``top``, so it must
+        start at ``bottom``. The bottom position comes from the client's
+        pipette configuration (same ownership as ul_per_mm — the connector
+        stays pipette-agnostic). Skipping this before Aspirate leaves the
+        plunger at/near its retracted top, and the aspirate move is rejected
+        as out of bounds instead of running backwards.
+
+        Args:
+            mount: Pipette mount (left = axis B, right = axis C).
+            bottom_position_mm: The attached pipette's plunger ``bottom``
+                position in axis mm (e.g. -18.5 for a P1000 GEN2).
+
+        Returns:
+            Axis positions after the move.
+        """
+        axis = mount.value
+        self._check_bounds(axis, bottom_position_mm)
+        await self._controller.move({axis.value: bottom_position_mm})
+        return _dict_to_position(await self._controller.get_position())
+
+    @sila.UnobservableCommand(errors=[OutOfBoundsError])
     async def aspirate(
         self,
         mount: Mount,
@@ -268,8 +298,10 @@ class MotionControlFeature(sila.Feature):
         flow_rate_ul_s: float,
     ) -> AxisPosition:
         """
-        Draw liquid by moving the plunger axis down.
+        Draw liquid by retracting the plunger axis UP (Opentrons semantics).
 
+        The plunger must first be at its bottom position (PrepareForAspirate);
+        aspirating moves it up by volume_ul / ul_per_mm, pulling liquid in.
         The connector exposes this primitive move only — liquid-class logic
         (blowout, mix, touch-tip, sequence ordering) stays on the client.
 
@@ -284,7 +316,7 @@ class MotionControlFeature(sila.Feature):
         """
         axis = mount.value
         distance_mm = volume_ul / ul_per_mm
-        target = self._controller.position.get(axis.value, 0.0) - distance_mm
+        target = self._controller.position.get(axis.value, 0.0) + distance_mm
         self._check_bounds(axis, target)
         await self._controller.aspirate(axis.value, volume_ul, ul_per_mm, flow_rate_ul_s)
         return _dict_to_position(await self._controller.get_position())
@@ -298,8 +330,10 @@ class MotionControlFeature(sila.Feature):
         flow_rate_ul_s: float,
     ) -> AxisPosition:
         """
-        Expel liquid by moving the plunger axis up.
+        Expel liquid by pressing the plunger axis DOWN (Opentrons semantics).
 
+        Moves the plunger down by volume_ul / ul_per_mm from its aspirated
+        position back toward ``bottom``, pushing liquid out.
         The connector exposes this primitive move only — liquid-class logic
         (blowout, mix, touch-tip, sequence ordering) stays on the client.
 
@@ -314,7 +348,7 @@ class MotionControlFeature(sila.Feature):
         """
         axis = mount.value
         distance_mm = volume_ul / ul_per_mm
-        target = self._controller.position.get(axis.value, 0.0) + distance_mm
+        target = self._controller.position.get(axis.value, 0.0) - distance_mm
         self._check_bounds(axis, target)
         await self._controller.dispense(axis.value, volume_ul, ul_per_mm, flow_rate_ul_s)
         return _dict_to_position(await self._controller.get_position())
