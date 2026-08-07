@@ -127,6 +127,21 @@ class _MotionClient:
             AxisPosition,
         )
 
+    async def move_to(self, position: dict[str, float], speed: float = 0.0) -> AxisPosition:
+        """Move all axes to an absolute position; returns the queried AxisPosition."""
+        return self._single(await self._call("MoveTo", {"position": position, "speed": speed}), AxisPosition)
+
+    async def move_to_unverified(self, position: dict[str, float], speed: float = 0.0) -> AxisPosition:
+        """Move without the trailing firmware position query; returns the commanded AxisPosition."""
+        return self._single(
+            await self._call("MoveToUnverified", {"position": position, "speed": speed}),
+            AxisPosition,
+        )
+
+    async def move_through(self, waypoints: list[dict[str, float]]) -> AxisPosition:
+        """Execute a batched waypoint sequence; returns the final AxisPosition."""
+        return self._single(await self._call("MoveThrough", {"waypoints": waypoints}), AxisPosition)
+
     async def get_is_simulating(self) -> bool:
         """Return the is-simulating boolean."""
         return next(iter((await self._get_property("Get_IsSimulating")).values()))
@@ -247,6 +262,62 @@ async def test_move_relative_axis_accumulates(client: _MotionClient, homed_posit
     await client.move_relative_axis(axis=Axis.Y, delta=-20.0)
     result = await client.move_relative_axis(axis=Axis.Y, delta=-20.0)
     assert result.y == pytest.approx(homed_position.y - 40.0)
+
+
+# ── MoveToUnverified / MoveThrough ────────────────────────────────────────────
+
+
+def _axes_dict(position: AxisPosition, **overrides: float) -> dict[str, float]:
+    axes = {ax: float(getattr(position, ax)) for ax in "xyzabc"}
+    axes.update(overrides)
+    return axes
+
+
+@pytest.mark.asyncio
+async def test_move_to_unverified_returns_commanded_target(client: _MotionClient, homed_position: AxisPosition) -> None:
+    """MoveToUnverified echoes the commanded target; GetPosition then confirms it."""
+    target = _axes_dict(homed_position, x=75.0, z=100.0)
+    result = await client.move_to_unverified(target)
+    assert result.x == pytest.approx(75.0)
+    assert result.z == pytest.approx(100.0)
+    verified = await client.get_position()
+    assert verified.x == pytest.approx(75.0)
+    assert verified.z == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_move_through_lands_on_final_waypoint(client: _MotionClient, homed_position: AxisPosition) -> None:
+    """A wiggle + rise batch over the wire ends at the last waypoint's position."""
+    waypoints = [
+        _axes_dict(homed_position, x=75.0, y=300.0, z=100.0, speed=0.0),
+        _axes_dict(homed_position, x=75.5, y=300.0, z=100.0, speed=25.0),
+        _axes_dict(homed_position, x=74.5, y=300.0, z=100.0, speed=25.0),
+        _axes_dict(homed_position, x=75.0, y=300.0, z=120.0, speed=0.0),
+    ]
+    result = await client.move_through(waypoints)
+    assert result.x == pytest.approx(75.0)
+    assert result.y == pytest.approx(300.0)
+    assert result.z == pytest.approx(120.0)
+
+
+@pytest.mark.asyncio
+async def test_move_through_matches_individual_move_to_calls(
+    client: _MotionClient, homed_position: AxisPosition
+) -> None:
+    """The batch's final position equals the same waypoints issued as discrete MoveTo calls."""
+    targets = [
+        _axes_dict(homed_position, x=80.0, y=300.0),
+        _axes_dict(homed_position, x=80.3, y=300.0),
+        _axes_dict(homed_position, x=79.7, y=300.0, z=110.0),
+    ]
+    for target in targets:
+        discrete = await client.move_to(target)
+
+    await client.home()
+    batched = await client.move_through([dict(t, speed=0.0) for t in targets])
+    assert batched.x == pytest.approx(discrete.x)
+    assert batched.y == pytest.approx(discrete.y)
+    assert batched.z == pytest.approx(discrete.z)
 
 
 # ── Error reset ───────────────────────────────────────────────────────────────

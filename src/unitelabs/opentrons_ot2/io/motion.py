@@ -11,6 +11,7 @@ Uses:
 """
 
 import asyncio
+import contextlib
 import ctypes
 import logging
 import math
@@ -19,8 +20,15 @@ from pathlib import Path
 # Import Opentrons driver components
 from opentrons.config.robot_configs import load_ot2
 from opentrons.hardware_control import HardwareControlAPI
+from opentrons.drivers.command_builder import CommandBuilder
 from opentrons.drivers.smoothie_drivers.driver_3_0 import SmoothieDriver
-from opentrons.drivers.smoothie_drivers.constants import AXES
+from opentrons.drivers.smoothie_drivers.constants import (
+    AXES,
+    DEFAULT_EXECUTE_TIMEOUT,
+    GCODE,
+    GCODE_ROUNDING_PRECISION,
+    SMOOTHIE_COMMAND_TERMINATOR,
+)
 from opentrons.drivers.smoothie_drivers.errors import SmoothieAlarm, SmoothieError
 from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
@@ -153,6 +161,22 @@ class _SimulatorStateSyncingDriver:
 # no pipette run current is available (e.g. standalone mode without a HardwareAPI).
 _PLUNGER_AXES = "BC"
 _DEFAULT_PLUNGER_HOME_CURRENT_AMPS = 0.5
+
+# Tolerances SmoothieDriver.move uses to decide whether an axis actually moves
+# (its valid_movement check). Reused by move_through and by the feature layer's
+# plunger guard so "does this waypoint move axis X" means the same thing at
+# every layer.
+MOVE_MATCH_REL_TOL = 1e-05
+MOVE_MATCH_ABS_TOL = 1e-08
+
+# The Smoothie's serial line buffer size is not documented anywhere in the
+# opentrons package, but the longest line SmoothieDriver.move itself produces
+# (speed + currents + primary move + plunger backlash + speed restore) is
+# ~150 characters and provably works on production firmware. Batched waypoint
+# lines are capped at that same length; waypoints beyond the cap go on a
+# further line, which costs one planner drain (M400 full stop) at the boundary
+# — still one stop per ~8 waypoints instead of one per waypoint.
+_MAX_BATCH_COMMAND_CHARS = 150
 
 
 class OT2MotionController:
@@ -459,6 +483,166 @@ class OT2MotionController:
             current = self.position
             target = {ax: current.get(ax, 0) + delta for ax, delta in deltas.items()}
             await self._driver.move(target=target, speed=speed)
+
+    async def move_through(
+        self,
+        moves: list[tuple[dict[str, float], float | None]],
+    ) -> None:
+        """
+        Execute a sequence of absolute moves as batched G0 lines.
+
+        Every public SmoothieDriver entry point sends its G-code followed by an
+        M400 queue drain (_send_command), so driving waypoints through move()
+        forces a full stop at each one. On the real robot a discrete move costs
+        ~241 ms of which ~153 ms is execution+settle and ~82 ms is the position
+        read-back — the travel itself is nearly free for short segments. This
+        method instead puts several G0 commands on one serial line (exactly what
+        SmoothieDriver.move does for its split/primary/backlash sub-moves) so
+        the Smoothie's look-ahead planner blends consecutive waypoints, and
+        drains the queue once per line.
+
+        Reuses the driver's own building blocks — activate/dwell current
+        bookkeeping, _generate_current_command, _build_speed_command, and
+        _send_command's alarm recovery — rather than reimplementing them.
+
+        SmoothieDriver.move's plunger backlash preload and stuck-axis move
+        splitting are NOT applied here; callers must not move the plunger axes
+        (B, C) through this method (the feature layer enforces this).
+
+        Args:
+            moves: Ordered (target, speed) pairs. Each target maps axis letters
+                to absolute mm; speed is mm/sec or None for the default speed.
+                Axes matching the running position are omitted from the G-code,
+                and waypoints that move nothing are dropped.
+        """
+        async with self._lock:
+            await self._driver.run_flag.wait()
+            steps, moving_axes = self._filter_move_through_steps(moves)
+            if not steps:
+                return
+            self._driver.dwell_axes("".join(ax for ax in AXES if ax not in moving_axes))
+            self._driver.activate_axes("".join(sorted(moving_axes)))
+            # Currents are generated after activate/dwell so the M907 command
+            # reflects the batch's axes — same ordering as SmoothieDriver.move.
+            batches, speed_dirty = self._assemble_move_through_batches(steps)
+            for ax in moving_axes:
+                self._driver.engaged_axes[ax] = True
+            try:
+                for command, end_position in batches:
+                    await self._driver._send_command(command, timeout=DEFAULT_EXECUTE_TIMEOUT)
+                    # Cache the commanded target per completed line (what
+                    # driver.move does once per call), so an alarm on a later
+                    # line leaves the finished lines reflected.
+                    self._driver._update_position(end_position)
+            except BaseException:
+                # driver.move restores the combined speed on the same serial
+                # line, so a mid-line alarm can skip it there too — but with
+                # multiple lines the exposure window is structurally larger, and
+                # the driver elsewhere assumes the firmware is always left at
+                # _combined_speed. Best effort: the alarm path has already reset
+                # and homed inside _send_command, so a follow-up F command is safe.
+                if speed_dirty:
+                    with contextlib.suppress(Exception):
+                        await self._driver._send_command(
+                            self._driver._build_speed_command(self._driver._combined_speed)
+                        )
+                raise
+            finally:
+                self._driver._axes_moved_at.mark_moved(sorted(moving_axes))
+            if isinstance(self._driver, _SimulatorStateSyncingDriver):
+                self._driver._sync_backend_state()
+
+    def _filter_move_through_steps(
+        self,
+        moves: list[tuple[dict[str, float], float | None]],
+    ) -> tuple[list[tuple[dict[str, float], dict[str, float], float | None]], set[str]]:
+        """
+        Thread the position cache through the waypoints and drop no-op motion.
+
+        Applies SmoothieDriver.move's valid_movement filter per waypoint so
+        axes already at target don't emit G-code words.
+
+        Returns:
+            A (steps, moving_axes) pair, where each step is (moving, snapshot,
+            speed): the axes that actually move, the full expected position
+            after the waypoint, and the requested speed.
+        """
+        position = dict(self._driver.position)
+        steps: list[tuple[dict[str, float], dict[str, float], float | None]] = []
+        moving_axes: set[str] = set()
+        for target, speed in moves:
+            clean = {ax: float(value) for ax, value in target.items() if ax in AXES}
+            moving = {
+                ax: value
+                for ax, value in sorted(clean.items())
+                if not math.isclose(
+                    value, position.get(ax, 0.0), rel_tol=MOVE_MATCH_REL_TOL, abs_tol=MOVE_MATCH_ABS_TOL
+                )
+            }
+            position.update(clean)
+            if moving:
+                moving_axes.update(moving)
+                steps.append((moving, dict(position), speed))
+        return steps, moving_axes
+
+    def _assemble_move_through_batches(
+        self,
+        steps: list[tuple[dict[str, float], dict[str, float], float | None]],
+    ) -> tuple[list[tuple[CommandBuilder, dict[str, float]]], bool]:
+        """
+        Pack waypoint G0 commands into serial lines within the length cap.
+
+        The first line carries the M907 current command (as driver.move embeds
+        it); later lines don't need it because nothing else can change currents
+        while the hardware lock is held. F (speed) words are modal, so one is
+        emitted only when the effective speed changes, and the combined speed
+        is restored at the end of the last line — the same invariant
+        driver.move maintains after every call.
+
+        Returns:
+            A (batches, speed_dirty) pair: each batch is (command, expected
+            position after the line); speed_dirty is True when any F word was
+            emitted and the firmware speed needs restoring on failure.
+        """
+        combined_speed = self._driver._combined_speed
+        current_speed = combined_speed
+        # Reserve room for the trailing speed restore so appending it can never
+        # push the last line over the cap.
+        reserve = len(self._driver._build_speed_command(combined_speed).build())
+
+        batches: list[tuple[CommandBuilder, dict[str, float]]] = []
+        command = CommandBuilder(terminator=SMOOTHIE_COMMAND_TERMINATOR)
+        command.add_builder(builder=self._driver._generate_current_command())
+        end_position: dict[str, float] = {}
+
+        speed_dirty = False
+        for moving, snapshot, speed in steps:
+            effective_speed = speed if speed and speed > 0 else combined_speed
+            piece = CommandBuilder(terminator=SMOOTHIE_COMMAND_TERMINATOR)
+            if effective_speed != current_speed:
+                piece.add_builder(builder=self._driver._build_speed_command(effective_speed))
+                # Any F word on the wire means a failure can leave the firmware
+                # off _combined_speed, even if a later waypoint would have set
+                # it back — the caller's failure path must restore.
+                speed_dirty = True
+            piece.add_gcode(gcode=GCODE.MOVE)
+            for ax, value in moving.items():
+                piece.add_float(prefix=ax, value=value, precision=GCODE_ROUNDING_PRECISION)
+            # end_position is only empty while the current line has no move on
+            # it yet, so every line accepts at least one waypoint and packing
+            # always terminates.
+            if end_position and len(command.build()) + len(piece.build()) + reserve > _MAX_BATCH_COMMAND_CHARS:
+                batches.append((command, end_position))
+                command = CommandBuilder(terminator=SMOOTHIE_COMMAND_TERMINATOR)
+                end_position = {}
+            command.add_builder(builder=piece)
+            current_speed = effective_speed
+            end_position = snapshot
+
+        if current_speed != combined_speed:
+            command.add_builder(builder=self._driver._build_speed_command(combined_speed))
+        batches.append((command, end_position))
+        return batches, speed_dirty
 
     async def get_position(self) -> dict[str, float]:
         """
