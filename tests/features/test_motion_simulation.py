@@ -28,6 +28,8 @@ from unitelabs.opentrons_ot2.features.motion_control import (
     MotionControlFeature,
     Mount,
     OutOfBoundsError,
+    PlungerAxisNotSupportedError,
+    Waypoint,
 )
 from unitelabs.opentrons_ot2.io.motion import OT2MotionController
 
@@ -54,6 +56,17 @@ def _with(position: AxisPosition, **overrides: float) -> AxisPosition:
     axes = {ax: getattr(position, ax) for ax in "xyzabc"}
     axes.update(overrides)
     return AxisPosition(**axes)
+
+
+def _waypoint(position: AxisPosition, speed: float = 0.0, **overrides: float) -> Waypoint:
+    axes = {ax: getattr(position, ax) for ax in "xyzabc"}
+    axes.update(overrides)
+    return Waypoint(speed=speed, **axes)
+
+
+def _assert_positions_equal(actual: AxisPosition, expected: AxisPosition) -> None:
+    for ax in "xyzabc":
+        assert getattr(actual, ax) == pytest.approx(getattr(expected, ax)), f"axis {ax}"
 
 
 # ── Plunger bounds: the plunger axes travel negative (down to drop-tip) ────────
@@ -222,6 +235,121 @@ async def test_move_relative_axis_accumulates(homed_feature: MotionControlFeatur
     await homed_feature.move_relative_axis(axis=Axis.Y, delta=-20.0)
     result = await homed_feature.move_relative_axis(axis=Axis.Y, delta=-20.0)
     assert result.y == pytest.approx(HOMED_POSITION["Y"] - 40.0)
+
+
+# ── MoveToUnverified ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_move_to_unverified_returns_target_without_position_query(
+    homed_feature: MotionControlFeature, monkeypatch: pytest.MonkeyPatch
+):
+    """MoveToUnverified must not issue the trailing get_position firmware query."""
+
+    async def _fail() -> dict[str, float]:
+        pytest.fail("MoveToUnverified must not query the position")
+
+    monkeypatch.setattr(homed_feature._controller, "get_position", _fail)
+    target = AxisPosition(x=50.0, y=30.0, z=100.0, a=100.0, b=19.0, c=19.0)
+    result = await homed_feature.move_to_unverified(position=target)
+    _assert_positions_equal(result, target)
+
+
+@pytest.mark.asyncio
+async def test_move_to_unverified_matches_move_to(homed_feature: MotionControlFeature):
+    """The unverified return value equals what a subsequent GetPosition reports."""
+    target = AxisPosition(x=50.0, y=30.0, z=100.0, a=100.0, b=19.0, c=19.0)
+    result = await homed_feature.move_to_unverified(position=target)
+    verified = await homed_feature.get_position()
+    _assert_positions_equal(result, verified)
+
+
+@pytest.mark.asyncio
+async def test_move_to_unverified_out_of_bounds_rejected_without_moving(homed_feature: MotionControlFeature):
+    before = await homed_feature.get_position()
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.move_to_unverified(_with(before, x=-1.0))
+    _assert_positions_equal(await homed_feature.get_position(), before)
+
+
+# ── MoveThrough ───────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_move_through_single_waypoint_reaches_target(homed_feature: MotionControlFeature):
+    pos = await homed_feature.get_position()
+    result = await homed_feature.move_through([_waypoint(pos, x=50.0, y=30.0, z=100.0)])
+    assert result.x == pytest.approx(50.0)
+    assert result.y == pytest.approx(30.0)
+    assert result.z == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_move_through_matches_sequence_of_move_to_calls(homed_feature: MotionControlFeature):
+    """A batch must land exactly where the same waypoints issued as MoveTo calls land."""
+    reference = MotionControlFeature(await OT2MotionController.build(simulate=True))
+    await reference.home(ALL_AXES)
+
+    pos = await homed_feature.get_position()
+    targets = [
+        _with(pos, x=50.0, y=30.0),
+        _with(pos, x=50.3, y=30.0),
+        _with(pos, x=49.7, y=30.0, z=100.0),
+    ]
+
+    for target in targets:
+        expected = await reference.move_to(position=target, speed=25.0)
+    result = await homed_feature.move_through(
+        [_waypoint(pos, speed=25.0, x=t.x, y=t.y, z=t.z, a=t.a, b=t.b, c=t.c) for t in targets]
+    )
+    _assert_positions_equal(result, expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_index", [0, 1, 2])
+async def test_move_through_bad_waypoint_rejects_whole_batch(homed_feature: MotionControlFeature, bad_index: int):
+    """One out-of-bounds waypoint anywhere in the list must reject the batch before any motion."""
+    pos = await homed_feature.get_position()
+    waypoints = [
+        _waypoint(pos, x=50.0),
+        _waypoint(pos, x=51.0),
+        _waypoint(pos, x=52.0),
+    ]
+    waypoints[bad_index] = _waypoint(pos, x=-5.0)
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.move_through(waypoints)
+    _assert_positions_equal(await homed_feature.get_position(), pos)
+
+
+@pytest.mark.asyncio
+async def test_move_through_rejects_plunger_motion_without_moving(homed_feature: MotionControlFeature):
+    """Waypoints that move B/C are rejected: batching skips the plunger backlash preload."""
+    pos = await homed_feature.get_position()
+    waypoints = [_waypoint(pos, x=50.0), _waypoint(pos, x=50.0, b=pos.b - 5.0)]
+    with pytest.raises(PlungerAxisNotSupportedError):
+        await homed_feature.move_through(waypoints)
+    _assert_positions_equal(await homed_feature.get_position(), pos)
+
+
+@pytest.mark.asyncio
+async def test_move_through_queries_position_only_once(
+    homed_feature: MotionControlFeature, monkeypatch: pytest.MonkeyPatch
+):
+    """The whole point of the batch: no per-waypoint read-back, one query at the end."""
+    controller = homed_feature._controller
+    calls = 0
+    original = controller.get_position
+
+    async def _counting_get_position() -> dict[str, float]:
+        nonlocal calls
+        calls += 1
+        return await original()
+
+    monkeypatch.setattr(controller, "get_position", _counting_get_position)
+    pos = await homed_feature.get_position()
+    calls = 0
+    await homed_feature.move_through([_waypoint(pos, x=50.0 + i) for i in range(5)])
+    assert calls == 1
 
 
 # ── Probe ─────────────────────────────────────────────────────────────────────

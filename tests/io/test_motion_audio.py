@@ -19,7 +19,7 @@ from unitelabs.opentrons_ot2.io.motion import _play_pcm_blocking
 def test_play_pcm_blocking_raises_when_no_libasound() -> None:
     with (
         patch.object(motion_module, "_libasound", None),
-        pytest.raises(RuntimeError, match="libasound.so.2 not available"),
+        pytest.raises(RuntimeError, match=r"libasound\.so\.2 not available"),
     ):
         _play_pcm_blocking((ctypes.c_int16 * 1)(0), 1)
 

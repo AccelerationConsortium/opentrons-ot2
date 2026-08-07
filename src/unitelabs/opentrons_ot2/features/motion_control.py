@@ -5,6 +5,7 @@ Uses the OT2MotionController wrapper around Opentrons SmoothieDriver.
 """
 
 import enum
+import math
 import typing
 from dataclasses import dataclass
 
@@ -13,6 +14,7 @@ from unitelabs.cdk import sila
 from unitelabs.cdk.sila import constraints
 
 from ..io import OT2MotionController
+from ..io.motion import MOVE_MATCH_ABS_TOL, MOVE_MATCH_REL_TOL
 
 
 @dataclass
@@ -25,6 +27,24 @@ class AxisPosition:
     a: float
     b: float
     c: float
+
+
+@dataclass
+class Waypoint:
+    """
+    One absolute target in a MoveThrough sequence.
+
+    Same axis semantics as AxisPosition, plus the speed to use for the segment
+    ending at this waypoint (mm/sec, 0 = default speed).
+    """
+
+    x: float
+    y: float
+    z: float
+    a: float
+    b: float
+    c: float
+    speed: float
 
 
 @dataclass
@@ -134,6 +154,16 @@ class OutOfBoundsError(Exception):
     """Requested position exceeds the software travel limit for that axis."""
 
 
+class PlungerAxisNotSupportedError(Exception):
+    """
+    A MoveThrough waypoint moves a plunger axis (B or C), which is not supported.
+
+    Batched moves skip Opentrons' plunger backlash preload, which would cost
+    liquid-handling accuracy. Send the waypoint's B/C values equal to the
+    current position, and use MoveTo / Aspirate / Dispense for plunger motion.
+    """
+
+
 def _dict_to_position(pos: dict[str, float]) -> AxisPosition:
     """Convert Smoothie position dict (string-keyed) to AxisPosition."""
     return AxisPosition(**{ax.value.lower(): pos.get(ax.value, 0.0) for ax in Axis})
@@ -209,6 +239,90 @@ class MotionControlFeature(sila.Feature):
         await self._controller.move(target=target, speed=spd)
         pos = await self._controller.get_position()
         return _dict_to_position(pos)
+
+    @sila.UnobservableCommand(errors=[OutOfBoundsError])
+    async def move_to_unverified(self, position: AxisPosition, speed: float = 0.0) -> AxisPosition:
+        """
+        Move to an absolute position without querying the resulting position.
+
+        Identical motion to MoveTo (same Opentrons move implementation, same
+        bounds validation), but the returned position is the commanded target
+        from the driver's cache instead of a firmware query. The query is a
+        Smoothie serial round-trip measured at 82 ms per move on the real robot
+        (~34% of a short move's total time); callers that track position
+        themselves can skip it. This is a separate command rather than a MoveTo
+        flag because SiLA rejects messages missing a declared parameter, so
+        adding one to MoveTo would break existing clients.
+
+        Args:
+            position: Target position for all axes in mm.
+            speed: Movement speed in mm/sec (0 = default speed).
+
+        Returns:
+            The commanded target position (not verified against the firmware).
+        """
+        for ax in Axis:
+            self._check_bounds(ax, getattr(position, ax.value.lower()))
+        target = {ax.value: getattr(position, ax.value.lower()) for ax in Axis}
+        spd = speed if speed > 0 else None
+        await self._controller.move(target=target, speed=spd)
+        return _dict_to_position(self._controller.position)
+
+    @sila.UnobservableCommand(errors=[OutOfBoundsError, PlungerAxisNotSupportedError])
+    async def move_through(
+        self,
+        waypoints: typing.Annotated[list[Waypoint], constraints.MinimalElementCount(1)],
+    ) -> AxisPosition:
+        """
+        Move through a sequence of absolute positions in one command.
+
+        Waypoints are queued into the Smoothie's look-ahead planner without a
+        position query between them, so consecutive segments blend instead of
+        decelerating to a stop at every point. A discrete MoveTo measures
+        ~241 ms per short move on the real robot (position read-back 82 ms,
+        execution+settle 153 ms, network 5 ms), so a multi-point path such as a
+        tip shake runs several times faster batched than as individual MoveTo
+        calls — and without the per-point jerk.
+
+        Every waypoint is validated against the axis bounds before any motion
+        starts; one bad waypoint rejects the whole batch with nothing moved.
+        Plunger axes (B, C) must stay at their current position in every
+        waypoint: batched moves skip Opentrons' plunger backlash preload, so
+        plunger motion here would silently cost liquid-handling accuracy — use
+        MoveTo, Aspirate or Dispense instead.
+
+        Args:
+            waypoints: Ordered absolute targets, each with the speed for the
+                segment ending at it (mm/sec, 0 = default speed).
+
+        Returns:
+            The firmware-queried position after the final waypoint.
+        """
+        current = self._controller.position
+        for waypoint in waypoints:
+            for ax in Axis:
+                self._check_bounds(ax, getattr(waypoint, ax.value.lower()))
+            for ax in (Axis.B, Axis.C):
+                requested = getattr(waypoint, ax.value.lower())
+                if not math.isclose(
+                    requested, current.get(ax.value, 0.0), rel_tol=MOVE_MATCH_REL_TOL, abs_tol=MOVE_MATCH_ABS_TOL
+                ):
+                    msg = (
+                        f"Waypoint moves plunger axis {ax.value} from "
+                        f"{current.get(ax.value, 0.0):.3f} mm to {requested:.3f} mm. MoveThrough skips the "
+                        f"plunger backlash compensation, so plunger motion is not supported here — keep B/C at "
+                        f"their current position and use MoveTo, Aspirate or Dispense for plunger moves."
+                    )
+                    raise PlungerAxisNotSupportedError(msg)
+        moves = [
+            (
+                {ax.value: getattr(waypoint, ax.value.lower()) for ax in Axis},
+                waypoint.speed if waypoint.speed > 0 else None,
+            )
+            for waypoint in waypoints
+        ]
+        await self._controller.move_through(moves)
+        return _dict_to_position(await self._controller.get_position())
 
     @sila.UnobservableCommand(errors=[OutOfBoundsError])
     async def move_axis(self, axis: Axis, position: float, speed: float = 0.0) -> AxisPosition:
