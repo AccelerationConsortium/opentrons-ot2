@@ -109,6 +109,26 @@ _PLUNGER_FALLBACK_FLOOR_MM = -37.0
 # tested and there's no evidence it's wrong.
 _GANTRY_Z_AXES = frozenset({Axis.Z, Axis.A})
 
+# Axes whose UPPER bound must not be taken from HOMED_POSITION.
+#
+# axis_bounds reports opentrons' homed_position as the ceiling, but that constant
+# is not a travel limit -- opentrons itself distinguishes the two, overriding Y to
+# 370 against a homed 353.0 (smoothie_drivers/constants.py:41-50). X gets no such
+# override, so it inherits its homed value and only looks like a limit.
+#
+# Nothing in opentrons enforces it: smoothie_driver.move() neither clamps nor
+# validates, so Protocol Engine sends targets past homed_position and lets the
+# limit switch be the boundary. This connector's synthetic ceiling rejected
+# reachable positions PE would have executed -- reactor column 5 with the left
+# mount needs X=419.25, 1.25mm past homed, and the left pipette must travel
+# +34mm further in X than the right to reach the same well.
+#
+# Z/A keep their check: that one is load-bearing. This robot reports A max 170.15
+# and its physical switch trips at 169.86, i.e. TIGHTER than reported, so a target
+# inside the reported bound can still alarm. Removing A's ceiling would turn a
+# legible rejection into a raw G-code hard-limit ALARM mid-run.
+_NO_SYNTHETIC_CEILING_AXES = frozenset({Axis.X})
+
 
 class BoardRevision(enum.Enum):
     """OT-2 hardware board revision read from GPIO pins at startup."""
@@ -509,7 +529,15 @@ class MotionControlFeature(sila.Feature):
 
     @sila.UnobservableProperty()
     def axis_bounds(self) -> list[AxisBound]:
-        """Software travel limits for each axis. Positions outside these bounds are rejected."""
+        """
+        Software travel limits for each axis.
+
+        Reported per-axis and enforced by _check_bounds, EXCEPT that X's ceiling is
+        informational only: it is opentrons' HOMED_POSITION, not a travel limit, and
+        is no longer enforced (see _NO_SYNTHETIC_CEILING_AXES). Kept finite here
+        because it is still the useful number for a caller sizing a move, and
+        because SiLA Real has no infinity encoding.
+        """
         return [
             AxisBound(axis=Axis(ax), min_mm=self._axis_lower_limit_mm(Axis(ax)), max_mm=max_mm)
             for ax, max_mm in self._controller.axis_bounds.items()
@@ -540,9 +568,21 @@ class MotionControlFeature(sila.Feature):
                 return float(instrument.plunger_positions.drop_tip)
         return _PLUNGER_FALLBACK_FLOOR_MM
 
+    def _axis_upper_limit_mm(self, axis: Axis) -> float:
+        """
+        Software upper travel limit (mm) for an axis.
+
+        Returns infinity for axes whose reported ceiling is opentrons'
+        HOMED_POSITION rather than a real travel limit; see
+        :data:`_NO_SYNTHETIC_CEILING_AXES`.
+        """
+        if axis in _NO_SYNTHETIC_CEILING_AXES:
+            return float("inf")
+        return self._controller.axis_bounds[axis.value]
+
     def _check_bounds(self, axis: Axis, position_mm: float) -> None:
         """Raise OutOfBoundsError if position_mm is outside the axis software limit."""
-        max_mm = self._controller.axis_bounds[axis.value]
+        max_mm = self._axis_upper_limit_mm(axis)
         min_mm = self._axis_lower_limit_mm(axis)
         if not (min_mm <= position_mm <= max_mm):
             msg = f"Position {position_mm:.3f} mm is outside the {axis.value} axis limit [{min_mm}, {max_mm}] mm."
