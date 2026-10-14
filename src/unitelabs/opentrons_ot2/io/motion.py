@@ -30,7 +30,14 @@ from opentrons.drivers.smoothie_drivers.constants import (
     SMOOTHIE_COMMAND_TERMINATOR,
 )
 from opentrons.drivers.smoothie_drivers.errors import SmoothieAlarm, SmoothieError
-from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
+
+# gpiod (the Pi's GPIO chardev backend) does not exist off-robot; the
+# simulator branch never touches it, so its absence must not block
+# running the connector with use_simulator=true on a dev machine.
+try:
+    from opentrons.drivers.rpi_drivers.gpio import GPIOCharDev
+except ModuleNotFoundError:  # off-robot host without gpiod
+    GPIOCharDev = None  # type: ignore[assignment,misc]
 from opentrons.drivers.rpi_drivers.gpio_simulator import SimulatingGPIOCharDev
 
 from .hardware_proxy import _TimedLock
@@ -254,6 +261,12 @@ class OT2MotionController:
                 connection=None,  # None = simulation mode
             )
         else:
+            if GPIOCharDev is None:
+                msg = (
+                    "Real-hardware mode needs the Pi's gpiod module, which this "
+                    "host does not have; only use_simulator=true can run here."
+                )
+                raise RuntimeError(msg)
             log.info("Building OT2MotionController for real hardware on %s", port)
             gpio = GPIOCharDev("gpiochip0")
             gpio.config_by_board_rev()

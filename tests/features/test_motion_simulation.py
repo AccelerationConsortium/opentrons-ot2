@@ -418,12 +418,15 @@ async def test_axis_bounds_max_positive(feature):
 
 
 @pytest.mark.asyncio
-async def test_move_axis_out_of_bounds_raises(feature):
-    from unitelabs.opentrons_ot2.features.motion_control import OutOfBoundsError
+async def test_move_axis_far_past_x_homed_is_not_software_rejected(feature):
+    """X has no synthetic ceiling, so even an absurd target reaches the hardware.
 
+    This is the accepted cost of matching opentrons, which validates nothing in
+    smoothie_driver.move() and relies on the limit switch. The switch stops the
+    carriage; the software layer no longer second-guesses it.
+    """
     await feature.home("X")
-    with pytest.raises(OutOfBoundsError):
-        await feature.move_axis(Axis.X, position=9999.0)
+    await feature.move_axis(Axis.X, position=9999.0)
 
 
 @pytest.mark.asyncio
@@ -437,12 +440,10 @@ async def test_move_axis_within_bounds_does_not_raise(feature):
 
 
 @pytest.mark.asyncio
-async def test_move_relative_axis_out_of_bounds_raises(homed_feature):
-    from unitelabs.opentrons_ot2.features.motion_control import OutOfBoundsError
-
-    # Homed X=418 is the max; a positive relative move exceeds the limit.
-    with pytest.raises(OutOfBoundsError):
-        await homed_feature.move_relative_axis(axis=Axis.X, delta=100.0)
+async def test_move_relative_axis_past_x_homed_is_permitted(homed_feature):
+    # Homed X=418 is where X homes, not a travel limit, so moving past it is
+    # permitted -- reactor column 5 needs 1.25mm past it with the left mount.
+    await homed_feature.move_relative_axis(axis=Axis.X, delta=100.0)
 
 
 @pytest.mark.asyncio
@@ -511,3 +512,27 @@ async def test_serial_number_returns_string_in_simulation(feature: MotionControl
 async def test_disengage_axes_does_not_raise(feature: MotionControlFeature):
     await feature.home(ALL_AXES)
     await feature.disengage_axes("XYZABC")
+
+
+async def test_move_to_allows_x_past_homed_position(homed_feature: MotionControlFeature):
+    """X's reported ceiling is HOMED_POSITION, not a travel limit, so it is not enforced.
+
+    Opentrons distinguishes the two itself -- Y_BOUND_OVERRIDE is 370 against a homed
+    353.0 -- and smoothie_driver.move() validates nothing, so Protocol Engine sends
+    targets past homed and lets the limit switch decide. Enforcing homed as a ceiling
+    rejected positions PE executes: reactor column 5 needs X=419.25 with the left
+    mount, 1.25mm past homed, because the left pipette must travel +34mm further in X
+    than the right to reach the same well.
+    """
+    pos = await homed_feature.get_position()
+    homed_x = {b.axis.value: b.max_mm for b in homed_feature.axis_bounds()}["X"]
+    await homed_feature.move_to(_with(pos, x=homed_x + 1.25))
+
+
+async def test_move_to_still_rejects_gantry_z_above_its_ceiling(homed_feature: MotionControlFeature):
+    """A/Z keep their ceiling: this robot's A switch trips BELOW its reported max,
+    so a rejection here is what stops a raw hard-limit ALARM mid-run."""
+    pos = await homed_feature.get_position()
+    ceiling = {b.axis.value: b.max_mm for b in homed_feature.axis_bounds()}["A"]
+    with pytest.raises(OutOfBoundsError):
+        await homed_feature.move_to(_with(pos, a=ceiling + 1.0))

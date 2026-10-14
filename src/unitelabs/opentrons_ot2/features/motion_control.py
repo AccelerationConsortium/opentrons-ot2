@@ -5,6 +5,7 @@ Uses the OT2MotionController wrapper around Opentrons SmoothieDriver.
 """
 
 import enum
+import logging
 import math
 import typing
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from unitelabs.cdk.sila import constraints
 
 from ..io import OT2MotionController
 from ..io.motion import MOVE_MATCH_ABS_TOL, MOVE_MATCH_REL_TOL
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -108,6 +111,36 @@ _PLUNGER_FALLBACK_FLOOR_MM = -37.0
 # these two axes. X/Y (deck-plane) keep the 0.0 floor below; that hasn't been
 # tested and there's no evidence it's wrong.
 _GANTRY_Z_AXES = frozenset({Axis.Z, Axis.A})
+
+# Exceeding X's ceiling warns and proceeds instead of failing the move.
+#
+# This is opentrons' behaviour, not a relaxation of it. API._move calls
+# check_motion_bounds (hardware_control/util.py:67) on the gantry axes against
+# the same homed_position-derived bounds this connector reports. That function
+# logs the violation and raises only if the caller opts in via MotionChecks --
+# and NO caller in opentrons ever does: every signature defaults to
+# MotionChecks.NONE (api.py:821,888; ot3api.py:1377,1526;
+# protocols/motion_controller.py:188) and nothing overrides it. Protocol Engine
+# therefore warns and proceeds, which is why the production driver executed
+# reactor column 5: it needs X=419.25 with the left mount, 1.25mm past homed,
+# because the left pipette must travel +34mm further in X than the right to
+# reach the same well.
+#
+# Scoped to X's CEILING only, deliberately, rather than to every gantry
+# violation:
+#   - X/Y below 0 keep raising. Untested, no evidence opentrons' permissiveness
+#     is wanted there.
+#   - Z/A ceilings keep raising. Load-bearing in the other direction: this robot
+#     reports A max 170.15 while its physical switch trips at 169.86, so a
+#     target inside the reported bound can still alarm.
+#   - MoveThrough pre-validates every waypoint and rejects the whole batch on
+#     any violation. opentrons has no batched-move command, so it offers no
+#     precedent; partial execution of a batch is worse than either extreme.
+#   - Plunger axes are never checked by opentrons at all (to_check filters on
+#     gantry_axes()), but this connector's guard against aspirating without
+#     PrepareForAspirate is built on the bound raising. Dropping it would
+#     silently run transfers backwards.
+_WARN_ONLY_CEILING_AXES = frozenset({Axis.X})
 
 
 class BoardRevision(enum.Enum):
@@ -509,7 +542,15 @@ class MotionControlFeature(sila.Feature):
 
     @sila.UnobservableProperty()
     def axis_bounds(self) -> list[AxisBound]:
-        """Software travel limits for each axis. Positions outside these bounds are rejected."""
+        """
+        Software travel limits for each axis.
+
+        Reported per-axis and enforced by _check_bounds, EXCEPT that X's ceiling is
+        informational only: it is opentrons' HOMED_POSITION, not a travel limit, and
+        is no longer enforced (see _NO_SYNTHETIC_CEILING_AXES). Kept finite here
+        because it is still the useful number for a caller sizing a move, and
+        because SiLA Real has no infinity encoding.
+        """
         return [
             AxisBound(axis=Axis(ax), min_mm=self._axis_lower_limit_mm(Axis(ax)), max_mm=max_mm)
             for ax, max_mm in self._controller.axis_bounds.items()
@@ -541,12 +582,29 @@ class MotionControlFeature(sila.Feature):
         return _PLUNGER_FALLBACK_FLOOR_MM
 
     def _check_bounds(self, axis: Axis, position_mm: float) -> None:
-        """Raise OutOfBoundsError if position_mm is outside the axis software limit."""
+        """
+        Check position_mm against the axis software limit.
+
+        Exceeding X's ceiling warns and proceeds, as opentrons does; every other
+        violation raises. See _WARN_ONLY_CEILING_AXES.
+        """
         max_mm = self._controller.axis_bounds[axis.value]
         min_mm = self._axis_lower_limit_mm(axis)
-        if not (min_mm <= position_mm <= max_mm):
-            msg = f"Position {position_mm:.3f} mm is outside the {axis.value} axis limit [{min_mm}, {max_mm}] mm."
-            raise OutOfBoundsError(msg)
+        if min_mm <= position_mm <= max_mm:
+            return
+
+        msg = f"Position {position_mm:.3f} mm is outside the {axis.value} axis limit [{min_mm}, {max_mm}] mm."
+        if position_mm > max_mm and axis in _WARN_ONLY_CEILING_AXES:
+            # opentrons' own wording, so logs read the same on both drivers.
+            logger.warning(
+                "Out of bounds move: %s=(%s motor controller) too %s for limit %s",
+                axis.value,
+                f"{position_mm:.3f}",
+                "low" if position_mm < min_mm else "high",
+                f"{min_mm}" if position_mm < min_mm else f"{max_mm}",
+            )
+            return
+        raise OutOfBoundsError(msg)
 
     @sila.UnobservableProperty()
     def is_simulating(self) -> bool:
