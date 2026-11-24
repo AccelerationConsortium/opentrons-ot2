@@ -91,7 +91,8 @@ class Axis(enum.Enum):
 
 
 _AXIS_CHARS = "".join(ax.value for ax in Axis)
-_AxesStr = typing.Annotated[str, constraints.Pattern(rf"^[{_AXIS_CHARS}{_AXIS_CHARS.lower()}]+$")]
+# SiLA patterns are XML Schema regexes: implicitly anchored, and ^/$ are literals.
+_AxesStr = typing.Annotated[str, constraints.Pattern(rf"[{_AXIS_CHARS}{_AXIS_CHARS.lower()}]+")]
 
 # OT-2 plunger axes (B, C) travel to negative positions (down to the drop-tip).
 # Like opentrons, the real floor is per-pipette (the attached pipette's drop-tip
