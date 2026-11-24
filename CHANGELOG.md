@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-24
+
+### Added
+
+- `MotionControlFeature` — MoveToUnverified and MoveThrough commands to cut per-move overhead
+- `MotionControlFeature` — PrepareForAspirate command
+- `CalibrationFeature` — general deck and pipette-offset calibration reads over SiLA
+- Defined execution errors for module commands
+- Range and unit constraints on module command inputs
+- `get_device_info` returns a DeviceInfo structure
+- Robot server bundled into the self-contained executable; deploy uses the executable only (no venv)
+- Simulator mode works on hosts without `gpiod`; smoketest config added
+- `verify_ot2.sh` checks the HTTP API and reports every failure instead of stopping at the first
+
+### Changed
+
+- **Breaking:** module status responses are now enums instead of free strings, and module input identifiers were renamed
+- Plunger (B/C) lower bound now comes from the attached pipette's drop-tip position
+- X past its homed position logs a warning instead of raising; `HOMED_POSITION` is no longer treated as a travel limit
+- Removed the unverified 0.0 floor on the Z/A gantry axes
+- OT-2 wheels are published as tar.gz to a rolling release
+
+### Fixed
+
+- Axes string pattern (`Home`, `DisengageAxes`) rejected valid input such as `XYZABC` on spec-compliant SiLA clients: SiLA patterns are XML Schema regexes, where `^`/`$` are literal characters, not anchors
+- Aspirate/dispense plunger direction was reversed
+- Light controller was not populated in `with_robot_server` mode
+- Simulator position and homed state now stay in sync with SiLA-driven motion
+- Deploy: stop the connector before overwriting its binary, guard against duplicate processes, and redirect PyInstaller extraction away from `/tmp`
+- Build: missing system packages (sqlite, bz2, lzma, gdbm, build-essential, git) and pinned dependency fixes
+
+## [0.5.0] - 2026-06-11
+
+### Changed
+
+- Motion bounds, shared-hardware module features, and plunger home-current fix (see tag `v0.5.0`)
+
 ## [0.4.0] - 2026-05-26
 
 ### Added
